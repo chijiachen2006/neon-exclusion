@@ -1,8 +1,8 @@
 # 霓虹禁区 · v2.1
 
-俯视角射击游戏。双击 [offline/neon-exclusion.html](offline/neon-exclusion.html) 即可离线游玩，无需安装依赖。推荐桌面浏览器或手机横屏。
+俯视角射击游戏。下载 [单文件离线版](offline/neon-exclusion.html)，保存后用浏览器打开即可游玩，无需安装依赖。推荐桌面浏览器或手机横屏。
 
-公网地址：`https://neon-exclusion-20261029.kasumi-c.chatgpt.site`，无需账号或 ChatGPT 登录。
+在线试玩：[GitHub Pages](https://chijiachen2006.github.io/neon-exclusion/) · [备用地址](https://neon-exclusion-20261029.kasumi-c.chatgpt.site)。无需账号或 ChatGPT 登录。
 
 ![手机横屏操作界面](assets/mobile-preview.png)
 
