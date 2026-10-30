@@ -1,4 +1,4 @@
-import { mountGame } from './game.js';
+import { mountGame } from './game.js?v=3.0';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('gameCanvas');
@@ -56,11 +56,20 @@ function render(state) {
     $('bossPhase').textContent = state.boss.phase === 2 ? '狂暴 · 第二阶段' : '第一阶段';
     const fraction = state.boss.health / state.boss.maxHealth;
     $('bossFill').style.width = `${Math.max(0, fraction * 100)}%`;
-    $('bossHealth').textContent = `${Math.ceil(state.boss.health)} / ${Math.ceil(state.boss.maxHealth)}`;
+    $('bossHealth').textContent = state.boss.hint;
     $('bossBar').setAttribute('aria-valuenow', String(Math.round(fraction * 100)));
     $('bossHud').classList.toggle('is-enraged', state.boss.phase === 2);
   }
 
+  const side = state.sideMission;
+  $('sideMission').hidden = !side || !['playing','paused'].includes(state.phase) || state.breakSeconds > 0;
+  if (side) {
+    $('sideMission').dataset.status = side.status;
+    $('sideTitle').textContent = side.status === 'complete' ? '支线完成' : side.status === 'missed' ? '支线结束' : `${side.name} · ${side.seconds}s`;
+    $('sideAction').textContent = side.status === 'active' ? side.action : side.status === 'complete' ? '奖励已领取' : '继续突破主线';
+    $('sideReward').textContent = side.status === 'active' ? `可选 · ${side.reward}` : '';
+    $('sideProgress').style.width = `${Math.round(Math.max(0, Math.min(1, side.progress)) * 100)}%`;
+  }
   const signature = JSON.stringify([state.upgrades, state.evolutions]);
   const strip = $('activeBuffs');
   if (signature !== lastBuffs) {
@@ -85,7 +94,7 @@ function render(state) {
   if (choiceSignature !== lastChoices) {
     lastChoices = choiceSignature;
     $('upgradeTitle').textContent = state.choiceRare ? '稀有核心 · 火力跃升' : '选择你的强化';
-    $('upgradeKicker').textContent = state.choiceRare ? '稀有强化 · 连升 2 级' : '强化核心 · 三选一';
+    $('upgradeKicker').textContent = state.choiceRare ? '稀有强化 · 最多升 2 级' : '强化核心 · 三选一';
     const cards = state.choices.map((choice, index) => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'upgrade-choice';
       button.style.setProperty('--choice-color', choice.color);
@@ -97,13 +106,24 @@ function render(state) {
       const level = document.createElement('span'); level.className = 'choice-level';
       level.textContent = choice.oldLevel ? `Lv.${choice.oldLevel} → Lv.${choice.level} / ${choice.max}` : `解锁 Lv.${choice.level} / ${choice.max}`;
       const desc = document.createElement('span'); desc.className = 'choice-description'; desc.textContent = choice.description;
+      if (choice.tradeoff) { const tag = document.createElement('span'); tag.className = 'choice-tradeoff'; tag.textContent = '收益与代价 · 互斥改装'; button.append(tag); }
+      button.classList.toggle('is-ready', !!choice.ready);
       button.append(top, title, level, desc);
-      if (choice.recipe) { const recipe = document.createElement('small'); recipe.textContent = choice.recipe; button.append(recipe); }
+      if (choice.recipe) { const recipe = document.createElement('small'); recipe.textContent = choice.recipe; recipe.classList.toggle('recipe-ready', !!choice.ready); button.append(recipe); }
       button.addEventListener('click', () => game.chooseUpgrade(choice.id));
       return button;
     });
     $('upgradeChoices').replaceChildren(...cards);
   }
+  $('rerollBtn').textContent = `重抽 · 剩余 ${state.rerolls} 次`;
+  $('rerollBtn').disabled = state.rerolls <= 0;
+  const routes = state.routes.filter((r) => r.invested > 0).slice(0, 3).map((r) => {
+    const item = document.createElement('span'); item.className = r.active ? 'route-active' : '';
+    item.textContent = r.active ? `✦ ${r.name} · 已进化` : `${r.name} ${r.invested}/${r.total} · ${r.missing}`;
+    return item;
+  });
+  $('evolutionRoutes').replaceChildren(...routes);
+  $('evolutionRoutes').hidden = !routes.length;
   $('upgradeHint').textContent = state.choicesRemaining ? `战斗已暂停 · 还有 ${state.choicesRemaining} 个核心等待选择` : '战斗已暂停 · 本局持续生效 · 按 1 / 2 / 3 选择';
 
   const labels = { idle: '等待部署', playing: '作战中', paused: '已暂停', choosing: '选择强化', victory: '封锁已突破', gameover: '任务结束' };
@@ -143,10 +163,14 @@ function render(state) {
 
 function onEvent(event) {
   switch (event.type) {
-    case 'wave': showToast(`第 ${event.wave} 波${event.boss ? ' · Boss 战' : event.elite ? ' · 精英入侵' : '开始'}`, event.boss ? 1700 : 1100); break;
+    case 'wave': showToast(`第 ${event.wave} 波 · ${event.name}`, event.boss ? 1700 : 1100); break;
     case 'boss': showToast(event.name, 2600); break;
     case 'bossPhase': showToast('首领进入狂暴阶段 · 留意攻击预警', 2600); break;
     case 'bossDefeated': showToast('首领已击败 · 获得稀有强化核心', 2400); break;
+    case 'missionStart': showToast(`可选目标 · ${event.name}`, 1600); break;
+    case 'missionComplete': showToast(`支线完成 · ${event.rare ? '稀有' : ''}强化核心${event.cache ? ' · 补给恢复' : ''}`, 1800); break;
+    case 'missionMissed': showToast('支线时间结束 · 继续突破', 1100); break;
+    case 'partBroken': showToast('护卫部件已摧毁 · 首领防御削弱', 1500); break;
     case 'supply': showToast('补给完成 · 生命 +20 · 弹匣补满'); break;
     case 'pickup': showToast('生命已恢复'); break;
     case 'evolution': lastEvolutionAt = performance.now(); showToast(`武器进化 · ${event.name}`, 3500); break;
@@ -157,6 +181,8 @@ function onEvent(event) {
 }
 
 const game = mountGame(canvas, { onState: render, onEvent });
+$('rerollBtn').addEventListener('click', () => game.rerollChoices());
+$('skipChoiceBtn').addEventListener('click', () => game.skipChoice());
 $('startBtn').addEventListener('click', () => game.start());
 $('startEndlessBtn').addEventListener('click', () => game.startEndless());
 $('resumeBtn').addEventListener('click', () => game.resume());

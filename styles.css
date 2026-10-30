@@ -435,3 +435,68 @@ html.touch-device .touch-controls:not([hidden]) { display:block; position:fixed;
   .touch-dash { right:105px; width:53px; height:53px; }
   .touch-reload { right:30px; }
 }
+
+/* v3: compact optional objectives, actionable evolution progress and choice controls. */
+.stage-corners { z-index:4; }
+.side-mission { position:absolute; z-index:3; top:112px; left:24px; display:flex; flex-direction:column; gap:4px; max-width:215px; padding:8px 10px; background:#09151d66; color:#ffe1a8; pointer-events:none; font-size:11px; line-height:1.4; }
+.side-mission strong { font-size:12px; }
+.side-mission span { color:#e7eadb; }
+.side-mission small { font-size:10px; color:#d8cbac; }
+.side-track { height:2px; background:#ae8f5b40; margin-top:3px; }
+.side-track i { display:block; height:100%; background:#ffdb94; width:0; }
+.side-mission[data-status="complete"] { color:#9ceabf; }
+.side-mission[data-status="missed"] { opacity:.55; }
+.upgrade-panel { max-height:100%; overflow:auto; }
+.upgrade-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top:16px; }
+.upgrade-actions .secondary-button { min-height:40px; width:auto; padding:8px 15px; margin:0; font-size:11px; }
+.evolution-routes { display:flex; flex-direction:column; gap:5px; margin-top:15px; text-align:left; font-size:11px; line-height:1.5; color:#c2d8d8; }
+.evolution-routes span { padding:3px 0; }
+.evolution-routes .route-active { color:#a7efbd; }
+.choice-tradeoff { align-self:flex-start; margin-bottom:10px; color:#ffcf9c; font-size:10px; }
+.upgrade-choice.is-ready { border-color:#9fe8b3; }
+.upgrade-choice small.recipe-ready { color:#b5f6c7; font-weight:800; }
+@media(max-width:760px) {
+  .side-mission { top:102px; left:12px; max-width:175px; padding:5px 7px; font-size:9px; gap:2px; }
+  .side-mission strong { font-size:10px; }
+  .side-mission small { font-size:8px; }
+  .evolution-routes { font-size:10px; }
+}
+@media(max-width:520px) and (orientation:portrait) {
+  html.touch-device .upgrade-overlay { position:fixed; inset:58px 0 0; padding:12px; }
+  html.touch-device .upgrade-panel { margin:auto 0; max-height:100%; }
+  html.touch-device .upgrade-panel { padding:14px 12px; }
+  html.touch-device .upgrade-panel h2 { font-size:22px; }
+  html.touch-device .upgrade-kicker { margin-bottom:5px; font-size:10px; }
+  html.touch-device .upgrade-subtitle { display:none; }
+  html.touch-device .upgrade-choices { margin-top:14px; gap:8px; }
+  html.touch-device .upgrade-choice { display:grid; grid-template-columns:24px minmax(0,1fr); gap:4px 9px; padding:10px 12px; }
+  html.touch-device .choice-top { grid-column:1; grid-row:1 / span 2; margin:0; align-self:start; }
+  html.touch-device .choice-icon { font-size:21px; }
+  html.touch-device .choice-top kbd { display:none; }
+  html.touch-device .upgrade-choice > strong { grid-column:2; margin:0; font-size:15px; }
+  html.touch-device .choice-level { grid-column:2; font-size:9px; }
+  html.touch-device .choice-description { grid-column:1 / -1; margin-top:3px; font-size:11px; line-height:1.5; }
+  html.touch-device .upgrade-choice small { grid-column:1 / -1; padding-top:3px; font-size:9px; }
+  html.touch-device .choice-tradeoff { grid-column:1 / -1; grid-row:1; margin:0; font-size:9px; }
+  html.touch-device .upgrade-choice:has(.choice-tradeoff) .choice-top { grid-row:2 / span 2; }
+  html.touch-device .evolution-routes { margin-top:9px; font-size:9px; gap:2px; }
+  html.touch-device .upgrade-hint { margin-top:10px; font-size:9px; }
+  html.touch-device .side-mission { position:fixed; top:96px; bottom:auto; left:16px; max-width:240px; }
+  .upgrade-actions { gap:8px; }
+  .upgrade-actions .secondary-button { flex:1 1 auto; min-height:42px; padding:8px; font-size:10px; }
+}
+@media(max-height:500px) and (orientation:landscape) {
+  html.touch-device .upgrade-overlay { position:fixed; inset:48px 12px 8px; padding:0; }
+  .side-mission { top:84px; font-size:8px; max-width:152px; }
+  .side-mission strong { font-size:9px; }
+  .side-mission small { font-size:8px; }
+  .upgrade-panel { padding:10px 14px; }
+  .upgrade-choice { min-height:122px; padding:9px 10px; }
+  .choice-top { margin-bottom:8px; }
+  .choice-icon { font-size:20px; }
+  .choice-tradeoff { margin-bottom:5px; font-size:8px; }
+  .evolution-routes { font-size:8px; margin-top:8px; gap:0; }
+  .upgrade-actions { margin-top:8px; gap:8px; }
+  .upgrade-actions .secondary-button { min-height:34px; padding:5px 12px; font-size:10px; }
+  .upgrade-hint { margin-top:8px; }
+}

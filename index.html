@@ -7,8 +7,8 @@
     <meta name="description" content="霓虹禁区：一款可直接在浏览器游玩的俯视角射击游戏。" />
     <title>霓虹禁区 · NEON EXCLUSION</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%230b171d' d='M0 0h32v32H0z'/%3E%3Cpath fill='none' stroke='%2373d683' stroke-width='2' d='m16 3 13 13-13 13L3 16Z'/%3E%3Cpath fill='%23e8c16b' d='m16 11 5 5-5 5-5-5Z'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="./styles.css" />
-    <script type="module" src="./main.js"></script>
+    <link rel="stylesheet" href="./styles.css?v=3.0" />
+    <script type="module" src="./main.js?v=3.0"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -17,7 +17,7 @@
           <span class="brand-mark" aria-hidden="true"><span></span></span>
           <span class="brand-copy"><strong>NEON<span> / </span>EXCLUSION</strong><small>霓虹禁区</small></span>
         </div>
-        <div class="masthead-meta"><span class="live-dot" aria-hidden="true"></span><span>单人竞技场</span><i></i><span class="version">SECTOR 09 · v2.1</span></div>
+        <div class="masthead-meta"><span class="live-dot" aria-hidden="true"></span><span>单人竞技场</span><i></i><span class="version">SECTOR 09 · v3.0</span></div>
         <div class="top-actions">
           <button type="button" class="icon-button" id="muteBtn" aria-label="切换音效" title="切换音效">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.4-.4a5 5 0 0 1 0 6.8M19 6a9 9 0 0 1 0 12" /></svg>
@@ -48,6 +48,7 @@
 
           <div class="mission-hud" id="missionHud" hidden><span id="hudMode">1 / 10</span><strong id="missionText"></strong><div class="mission-dots" id="missionDots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
           <div class="boss-hud" id="bossHud" hidden><div><strong id="bossName"></strong><span id="bossPhase"></span></div><div class="boss-track" id="bossBar" role="progressbar" aria-label="Boss 生命值" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="bossFill"></span></div><small id="bossHealth"></small></div>
+          <aside class="side-mission" id="sideMission" aria-label="可选战斗目标" hidden><strong id="sideTitle"></strong><span id="sideAction"></span><small id="sideReward"></small><div class="side-track"><i id="sideProgress"></i></div></aside>
           <div class="active-buffs" id="activeBuffs" aria-label="本局武器强化" hidden></div>
           <div class="lower-hud" aria-hidden="true"><span>EXCLUSION ZONE</span><span id="hudReload">武器待命</span><span id="hudRemaining">敌人 0</span></div>
           <div class="touch-controls" id="touchControls" aria-label="触屏操控" hidden>
@@ -123,14 +124,14 @@
                 <p class="mobile-controls">左摇杆移动，按住射击自动锁敌；拖动射击键瞄准，轻触闪避或换弹。</p>
                 <button type="button" class="primary-button" id="startBtn"><span>开始作战</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg></button>
                 <button type="button" class="secondary-button endless-start" id="startEndlessBtn" hidden>开始无尽模式</button>
-                <p class="intro-hint">第 3 波精英 · 第 5 / 10 波 Boss · Enter 开始</p>
+                <p class="intro-hint">精英试炼 · 双 Boss · 5 条进化路线 · Enter 开始</p>
               </div>
             </div>
             <span class="start-serial" aria-hidden="true">N / E / 009</span>
           </section>
 
           <section class="game-overlay upgrade-overlay" id="upgradeScreen" aria-labelledby="upgradeTitle" hidden>
-            <div class="upgrade-panel"><p class="upgrade-kicker" id="upgradeKicker">强化核心 · 三选一</p><h2 id="upgradeTitle">选择你的强化</h2><p class="upgrade-subtitle">决定本局的火力走向</p><div class="upgrade-choices" id="upgradeChoices"></div><p class="upgrade-hint" id="upgradeHint"></p></div>
+            <div class="upgrade-panel"><p class="upgrade-kicker" id="upgradeKicker">强化核心 · 三选一</p><h2 id="upgradeTitle">选择你的强化</h2><p class="upgrade-subtitle">决定本局的火力走向</p><div class="upgrade-choices" id="upgradeChoices"></div><div class="evolution-routes" id="evolutionRoutes" aria-label="武器进化进度" hidden></div><div class="upgrade-actions"><button type="button" class="secondary-button" id="rerollBtn">重抽 · 剩余 2 次</button><button type="button" class="secondary-button" id="skipChoiceBtn">放弃本次强化 · 恢复 12 生命</button></div><p class="upgrade-hint" id="upgradeHint"></p></div>
           </section>
           <section class="game-overlay modal-overlay victory-screen" id="victoryScreen" aria-labelledby="victoryTitle" hidden>
             <div class="modal-panel"><p class="modal-kicker">EXCLUSION LIFTED</p><div class="victory-symbol" aria-hidden="true">✦</div><h2 id="victoryTitle">封锁已突破</h2><p>全部 10 波完成，无尽模式已解锁。带上当前构筑，挑战更深的禁区。</p><div class="victory-score" id="victoryScore">0</div><p class="run-info" id="victoryInfo"></p><div class="modal-actions"><button type="button" class="primary-button" id="continueEndlessBtn">带着当前构筑继续无尽</button><button type="button" class="secondary-button" id="victoryRestartBtn">重新挑战 10 波</button></div></div>

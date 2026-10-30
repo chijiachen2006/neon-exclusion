@@ -18,15 +18,21 @@ const UPGRADES = {
   shield: { name: '能量护盾', icon: '⬡', color: '#80d6ff', max: 3 },
   reload: { name: '快速装填', icon: '↻', color: '#e8e59b', max: 3 },
   magazine: { name: '扩容弹匣', icon: '▥', color: '#ffd69a', max: 3 },
+  overload: { name: '重载机匣', icon: '◆', color: '#ffc17e', max: 1, excludes: 'accelerator', tradeoff: true },
+  accelerator: { name: '轻量枪机', icon: '↯', color: '#b9adff', max: 1, excludes: 'overload', tradeoff: true },
   dash: { name: '闪避强化', icon: '»', color: '#c0b0ff', max: 3 },
 };
 const EVOLUTIONS = {
+  frost: { name: '极寒追猎', color: '#b0edff', needs: { freeze: 3, homing: 2 }, description: '命中已减速敌人时伤害提高 30%，追踪转向更快' },
+  swarm: { name: '蜂群卫队', color: '#a4ffe6', needs: { drone: 3, shield: 2 }, description: '增加一架无人机，无人机攻击间隔缩短 25%' },
   siege: { name: '榴弹炮', color: '#ffb06d', needs: { heavy: 3, explosive: 3 }, description: '大范围爆炸，爆炸伤害与范围显著提升' },
   storm: { name: '雷暴机枪', color: '#9bbcff', needs: { rapid: 3, chain: 3 }, description: '电弧额外连锁 2 个目标，连锁范围扩大' },
   rail: { name: '连锁穿甲弹', color: '#a3ffe3', needs: { pierce: 3, ricochet: 3 }, description: '额外穿透 2 个目标，并额外弹射 2 次' },
 };
 function upgradeDescription(type, level) {
   return ({
+    overload: '伤害 ×1.70，射击间隔 ×1.28；与轻量枪机互斥',
+    accelerator: '射击间隔 ×0.70，伤害 ×0.84；与重载机匣互斥',
     heavy: `弹体增大 ${level * 30}%，伤害增加 ${level * 18}%`,
     pierce: `每颗子弹最多命中 ${level + 1} 个敌人`,
     rapid: `射速提高 ${Math.round((Math.pow(.89, -level) - 1) * 100)}%`,
@@ -43,12 +49,26 @@ function upgradeDescription(type, level) {
     dash: `闪避冷却缩短 ${level * 15}%，无敌时间延长`,
   })[type];
 }
+const CAMPAIGN = [
+  { name: '接敌训练', count: 12, cap: 7, group: 1, interval: 1.1, pool: ['runner'] },
+  { name: '交叉火力', count: 18, cap: 10, group: 2, interval: 1.0, pool: ['runner','runner','gunner'], mission: 'cache' },
+  { name: '精英试炼', count: 20, cap: 12, group: 2, interval: .9, pool: ['runner','gunner','brute'], elite: true },
+  { name: '突袭封锁', count: 28, cap: 15, group: 3, interval: .88, pool: ['charger','runner','gunner','charger'], mission: 'bounty' },
+  { name: '钢铁暴君', count: 1, cap: 12, group: 1, interval: 1, pool: [], boss: true },
+  { name: '重整防线', count: 26, cap: 13, group: 2, interval: .95, pool: ['splitter','runner','gunner'] },
+  { name: '猎杀阵列', count: 38, cap: 19, group: 3, interval: .78, pool: ['charger','sniper','runner','splitter'], mission: 'relay' },
+  { name: '精英围剿', count: 40, cap: 22, group: 4, interval: .78, pool: ['brute','gunner','charger','sniper'], elite: true },
+  { name: '最后防线', count: 50, cap: 26, group: 4, interval: .69, pool: ['charger','sniper','splitter','gunner','runner'], mission: 'bounty' },
+  { name: '封锁主宰', count: 1, cap: 18, group: 1, interval: 1, pool: [], boss: true },
+];
 function wavePlan(wave, endless) {
-  const boss = wave === 5 || wave === 10 || (endless && wave % 5 === 0);
-  return { boss, elite: !boss && (wave === 3 || (wave >= 7 && wave % 4 === 0)),
-    count: boss ? 1 : Math.min(9 + wave * 3, 66), cap: Math.min(8 + wave * 2, 34),
-    group: boss ? 1 : Math.min(1 + Math.floor(wave / 2), 5),
-    interval: Math.max(.32, 1.13 - wave * .065) };
+  if (wave <= 10) return { ...CAMPAIGN[Math.max(0, wave - 1)] };
+  const boss = endless && wave % 5 === 0;
+  return { name: boss ? '深层主宰' : '无尽封锁', boss, elite: !boss && wave % 4 === 0,
+    count: boss ? 1 : Math.min(48 + (wave - 10) * 3, 78), cap: Math.min(26 + wave - 10, 36),
+    group: boss ? 1 : 5, interval: Math.max(.38, .7 - (wave - 10) * .025),
+    pool: ['charger','sniper','splitter','gunner','brute','runner'],
+    mission: !boss && wave % 3 === 0 ? (wave % 2 ? 'bounty' : 'cache') : null };
 }
 const segmentDistanceSquared = (ax, ay, bx, by, px, py) => {
   const dx = bx - ax, dy = by - ay;
@@ -110,7 +130,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     endless: false, endlessUnlocked: readUnlock(), campaignWon: false,
     plan: wavePlan(1, false), waveCleared: false, waveTotal: 0,
     choices: [], choiceQueue: [], choiceRare: false, afterChoices: 'playing',
-    cover: [], zones: [], arcs: [], supply: null, hazardTimer: 8, bossesKilled: 0,
+    cover: [], zones: [], arcs: [], supply: null, hazardTimer: 8, bossesKilled: 0, mission: null, waveTime: 0, rerolls: 2,
   };
 
   function readBest() {
@@ -162,6 +182,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     state.campaignWon = false;
     state.choices = []; state.choiceQueue = []; state.afterChoices = 'playing';
     state.zones = []; state.arcs = []; state.bossesKilled = 0;
+    state.mission = null; state.waveTime = 0; state.rerolls = 2;
     clearInputs();
     beginWave();
     emitState();
@@ -208,7 +229,8 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     state.spawnsLeft = state.waveTotal;
     state.spawnTimer = state.plan.boss ? 2.3 : .9;
     state.waveIntro = state.plan.boss ? 2.6 : 1.25;
-    state.waveBreak = 0; state.waveCleared = false;
+    state.waveBreak = 0; state.waveCleared = false; state.waveTime = 0;
+    state.mission = state.plan.mission ? { type: state.plan.mission, status: 'pending', time: 26, charge: 0 } : null;
     state.enemyBullets = []; state.bullets = []; state.zones = [];
     setupArena();
     state.hazardTimer = 7;
@@ -216,7 +238,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     state.player.invulnerable = Math.max(state.player.invulnerable, 1.1);
     state.rings.push({ x: W / 2, y: H / 2, r: 30, max: 400, life: 1.4, total: 1.4, color: '#46f0e5' });
     sound('wave');
-    onEvent({ type: 'wave', wave: state.wave, boss: state.plan.boss, elite: state.plan.elite });
+    onEvent({ type: 'wave', wave: state.wave, boss: state.plan.boss, elite: state.plan.elite, name: state.plan.name });
     emitState();
   }
 
@@ -236,10 +258,13 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       choices: state.choices.map((choice) => ({ ...choice })), choiceRare: state.choiceRare,
       choicesRemaining: state.choiceQueue.length, endless: state.endless,
       endlessUnlocked: state.endlessUnlocked, elapsed: Math.floor(state.time), bossesKilled: state.bossesKilled,
-      boss: boss ? { name: boss.name, health: Math.max(0, boss.hp), maxHealth: boss.maxHp, phase: boss.enraged ? 2 : 1 } : null,
-      objective: state.waveCleared ? '战场肃清 · 准备下一波' : state.plan.boss ? 'Boss 战 · 留意地面预警' :
-        `${state.endless ? '无尽模式' : '突破 10 波封锁'} · 距离 Boss ${Math.max(0, nextBoss - state.wave)} 波`,
-      remaining: state.spawnsLeft + state.enemies.length,
+      boss: boss ? { name: boss.name, health: Math.max(0, boss.hp), maxHealth: boss.maxHp, phase: boss.enraged ? 2 : 1,
+        hint: bossHint(boss), parts: state.enemies.filter((e) => e.parent === boss).length } : null,
+      rerolls: state.rerolls, routes: recipeProgress(), sideMission: missionSnapshot(),
+      waveName: state.plan.name, breakSeconds: Math.ceil(state.waveBreak),
+      objective: state.waveCleared ? `补给休整 ${Math.ceil(state.waveBreak)} 秒 · 下一波 ${wavePlan(state.wave + 1, true).name}` :
+        `${state.plan.name} · ${state.plan.boss ? 'Boss 战' : `距 Boss ${Math.max(0, nextBoss - state.wave)} 波`}`,
+      remaining: state.spawnsLeft + state.enemies.filter((e) => !e.optional).length,
     };
   }
 
@@ -250,35 +275,74 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     if (phase === 'playing') openNextChoice();
   }
 
+  function recipeProgress(proposed = null) {
+    const upgrades = { ...state.player.upgrades, ...proposed };
+    return Object.entries(EVOLUTIONS).map(([id, recipe]) => {
+      const requirements = Object.entries(recipe.needs).map(([key, level]) =>
+        ({ name: UPGRADES[key].name, current: Math.min(upgrades[key], level), required: level }));
+      const missing = requirements.filter((r) => r.current < r.required).map((r) => `${r.name}还差 ${r.required - r.current} 级`);
+      return { id, name: recipe.name, color: recipe.color, active: state.player.evolutions.includes(id),
+        invested: requirements.reduce((sum, r) => sum + r.current, 0),
+        total: requirements.reduce((sum, r) => sum + r.required, 0),
+        missing: missing.join(' · ') || '本次选择即可进化', requirements };
+    }).sort((a, b) => Number(b.active) - Number(a.active) || b.invested / b.total - a.invested / a.total);
+  }
+
+  function generateChoices(rare, excluded = []) {
+    const u = state.player.upgrades;
+    const available = Object.keys(UPGRADES).filter((id) => u[id] < UPGRADES[id].max && !u[UPGRADES[id].excludes]);
+    // Weighted sampling favors completing a build while preserving new options.
+    const shuffled = available.map((id) => ({ id, rank: Math.random() })).sort((a, b) => a.rank - b.rank).map((e) => e.id);
+    const pool = shuffled.filter((id) => !excluded.includes(id));
+    for (const id of shuffled) if (!pool.includes(id)) pool.push(id);
+    const selected = [];
+    const take = (id) => { if (id && !selected.includes(id)) selected.push(id); };
+    const progressing = pool.find((id) => u[id] > 0 && !excluded.includes(id));
+    take(progressing);
+    const route = recipeProgress().find((r) => !r.active && r.invested > 0 &&
+      pool.some((id) => id in EVOLUTIONS[r.id].needs && u[id] < EVOLUTIONS[r.id].needs[id] && !excluded.includes(id)));
+    if (route) take(pool.find((id) => id in EVOLUTIONS[route.id].needs &&
+      u[id] < EVOLUTIONS[route.id].needs[id] && !selected.includes(id) && !excluded.includes(id)));
+    for (const id of pool) { if (selected.length >= 3) break; take(id); }
+    return selected.map((id) => {
+      const meta = UPGRADES[id], oldLevel = u[id], level = Math.min(meta.max, oldLevel + (rare ? 2 : 1));
+      const route = recipeProgress({ [id]: level }).find((r) => id in EVOLUTIONS[r.id].needs && !r.active);
+      return { id, name: meta.name, icon: meta.icon, color: meta.color, oldLevel, level, max: meta.max,
+        tradeoff: !!meta.tradeoff, description: upgradeDescription(id, level),
+        previous: oldLevel ? upgradeDescription(id, oldLevel) : '',
+        recipe: route ? `${route.name} · ${route.missing}` : '',
+        ready: route && route.invested === route.total };
+    });
+  }
+
   function openNextChoice() {
     if (!state.choiceQueue.length) {
-      state.choices = [];
-      phase = state.afterChoices;
+      state.choices = []; phase = state.afterChoices;
       if (phase === 'playing') canvas.focus({ preventScroll: true });
       emitState(); return;
     }
-    const rare = state.choiceQueue.shift();
-    const available = Object.keys(UPGRADES).filter((id) => state.player.upgrades[id] < UPGRADES[id].max);
-    // Fisher-Yates keeps every available upgrade eligible for the three-card offer.
-    for (let i = available.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [available[i], available[j]] = [available[j], available[i]];
-    }
-    if (!available.length) {
+    state.choiceRare = state.choiceQueue.shift();
+    state.choices = generateChoices(state.choiceRare);
+    if (!state.choices.length) {
       state.player.health = Math.min(state.player.maxHealth, state.player.health + 20);
-      state.score += rare ? 500 : 150;
+      state.score += state.choiceRare ? 500 : 150;
       saveBest(state.score); openNextChoice(); return;
     }
-    state.choiceRare = rare;
-    state.choices = available.slice(0, 3).map((id) => {
-      const meta = UPGRADES[id], oldLevel = state.player.upgrades[id];
-      const level = Math.min(meta.max, oldLevel + (rare ? 2 : 1));
-      const recipe = Object.values(EVOLUTIONS).find((evolution) => id in evolution.needs);
-      return { id, name: meta.name, icon: meta.icon, color: meta.color, oldLevel, level,
-        max: meta.max, description: upgradeDescription(id, level),
-        recipe: recipe ? `进化：${Object.keys(recipe.needs).map((key) => `${UPGRADES[key].name} Lv.3`).join(' + ')} → ${recipe.name}` : '' };
-    });
     phase = 'choosing'; clearInputs(); emitState();
+  }
+
+  function rerollChoices() {
+    if (phase !== 'choosing' || state.rerolls <= 0) return false;
+    const old = state.choices.map((c) => c.id);
+    const options = generateChoices(state.choiceRare, old);
+    if (!options.some((c) => !old.includes(c.id))) return false;
+    state.rerolls--; state.choices = options; emitState(); return true;
+  }
+
+  function skipChoice() {
+    if (phase !== 'choosing') return false;
+    state.player.health = Math.min(state.player.maxHealth, state.player.health + 12);
+    state.choices = []; clearInputs(); openNextChoice(); return true;
   }
 
   function chooseUpgrade(id) {
@@ -304,7 +368,11 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
 
   function completeWave() {
     if (state.waveCleared) return;
-    state.waveCleared = true; state.waveBreak = 3.5;
+    state.waveCleared = true; state.waveBreak = state.plan.boss ? 6 : 5;
+    state.enemyBullets = []; state.bullets = []; state.zones = [];
+    state.enemies = state.enemies.filter((e) => !e.optional);
+    if (state.mission && ['active', 'pending'].includes(state.mission.status)) state.mission.status = 'missed';
+    state.supply = { x: W / 2, y: H - 95, used: false, charge: 0 };
     state.player.health = Math.min(state.player.maxHealth, state.player.health + 8);
     // Clear rewards and uncollected cores survive the transition into the next wave.
     for (const item of state.pickups) if (item.type === 'core') state.choiceQueue.push(!!item.rare);
@@ -552,13 +620,8 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     const side = options.side ?? Math.floor(rand(0, 4));
     let type = forcedType || 'runner';
     if (!forcedType) {
-      const pool = ['runner', 'runner', 'runner'];
-      if (state.wave >= 2) pool.push('gunner');
-      if (state.wave >= 3) pool.push('brute');
-      if (state.wave >= 4) pool.push('charger');
-      if (state.wave >= 6) pool.push('splitter');
-      if (state.wave >= 7) pool.push('sniper', 'gunner');
-      type = pool[Math.floor(Math.random() * pool.length)];
+      const pool = state.plan.pool;
+      type = pool[Math.floor(Math.random() * pool.length)] || 'runner';
     }
     const isBoss = type === 'boss' || type === 'elite';
     const stats = {
@@ -568,22 +631,26 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       charger: { r: 22, hp: 60, speed: 115, color: '#ff7b5d', worth: 180 },
       splitter: { r: 26, hp: 75, speed: 80, color: '#95e88c', worth: 200 },
       sniper: { r: 23, hp: 52, speed: 65, color: '#ed92d5', worth: 220 },
+      pylon: { r: 19, hp: 380 + Math.max(0, state.wave - 10) * 65, speed: 0, color: '#b7afff', worth: 250 },
       elite: { r: 40, hp: 850 + Math.max(0, state.wave - 3) * 240, speed: 65, color: '#ffcc78', worth: 1000 },
-      boss: { r: state.wave >= 10 ? 65 : 54, hp: state.wave === 5 ? 6000 : 14000 + Math.max(0, state.wave - 10) * 2200,
+      boss: { r: state.wave >= 10 ? 65 : 54, hp: state.wave === 5 ? 4200 : 10000 + Math.max(0, state.wave - 10) * 2000,
         speed: 47, color: state.wave >= 10 ? '#ff94ac' : '#ffdf87', worth: state.wave >= 10 ? 5000 : 2500 },
     }[type];
-    const scale = 1 + (state.wave - 1) * .14 + (state.wave - 1) ** 2 * .012;
+    const scale = 1 + (state.wave - 1) * .10 + Math.max(0, state.wave - 6) * .055;
     const hp = isBoss ? stats.hp : stats.hp * scale;
     const e = { ...stats, type, isBoss, hp, maxHp: hp,
       x: options.x ?? (isBoss ? W / 2 : side === 0 ? -30 : side === 1 ? W + 30 : rand(60, W - 60)),
-      y: options.y ?? (isBoss ? 155 : side === 2 ? -30 : side === 3 ? H + 30 : rand(110, H - 70)),
+      y: options.y ?? (isBoss ? 230 : side === 2 ? -30 : side === 3 ? H + 30 : rand(110, H - 70)),
       speed: stats.speed * (1 + Math.min(.025 * state.wave, .28)), fireTimer: isBoss ? 1.7 : rand(.8, 2.2),
       phase: rand(0, TAU), spin: rand(-2, 2), hitFlash: 0, contactTimer: 0,
-      telegraph: 0, dashTime: 0, slowTimer: 0, slowFactor: 1, attackIndex: 0, enraged: false, detour: Math.random() < .5 ? -1 : 1,
+      telegraph: 0, dashTime: 0, slowTimer: 0, slowFactor: 1, attackIndex: 0, enraged: false, recovery: 0, parent: options.parent || null, orbit: options.orbit || 0, detour: Math.random() < .5 ? -1 : 1,
       name: type === 'elite' ? '哨戒先驱 · 精英' : state.wave >= 10 ? '封锁主宰 · 终局 Boss' : '钢铁暴君 · Boss',
     };
     if (options.small) { e.r = 12; e.hp = e.maxHp = 22 * scale; e.speed = 160; e.worth = 40; }
     state.enemies.push(e);
+    if (type === 'boss' && state.wave >= 10) {
+      for (let i = 0; i < 2; i++) spawnEnemy('pylon', { x: e.x + (i ? -110 : 110), y: e.y, parent: e, orbit: i * Math.PI });
+    }
     if (isBoss) onEvent({ type: 'boss', name: e.name });
     return e;
   }
@@ -605,8 +672,8 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     const p = state.player, u = p.upgrades;
     if (phase !== 'playing' || p.shootCooldown > 0 || p.reload > 0) return;
     if (p.ammo <= 0) { beginReload(); return; }
-    p.shootCooldown = .105 * Math.pow(.89, u.rapid); p.ammo--;
-    const spread = rand(-.02, .02), damage = 28 * (1 + u.heavy * .18) / (1 + u.multi * .25);
+    p.shootCooldown = .105 * Math.pow(.89, u.rapid) * (u.overload ? 1.28 : 1) * (u.accelerator ? .70 : 1); p.ammo--;
+    const spread = rand(-.02, .02), damage = 28 * (1 + u.heavy * .18) / (1 + u.multi * .25) * (u.overload ? 1.7 : 1) * (u.accelerator ? .84 : 1);
     for (let shot = -u.multi; shot <= u.multi; shot++) {
       const angle = p.angle + spread + shot * .14;
       projectile(p.x + Math.cos(angle) * 49, p.y + Math.sin(angle) * 49, angle, damage);
@@ -652,6 +719,10 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
 
   function damageEnemy(enemy, damage) {
     if (enemy.hp <= 0 || !state.enemies.includes(enemy)) return;
+    if (enemy.type === 'boss') {
+      if (enemy.recovery > 0) damage *= 1.45;
+      else damage *= 1 - state.enemies.filter((e) => e.parent === enemy).length * .175;
+    }
     enemy.hp -= damage; enemy.hitFlash = .11;
     if (enemy.hp <= 0) killEnemy(enemy, state.enemies.indexOf(enemy));
   }
@@ -671,11 +742,15 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     if (Math.random() < (state.player.health < 50 ? .16 : .055) || enemy.isBoss) {
       state.pickups.push({ type: 'health', x: clamp(enemy.x - 18, 45, W - 45), y: clamp(enemy.y, 95, H - 45), r: 12, life: 16, phase: 0 });
     }
-    if (enemy.isBoss || Math.random() < .12) {
+    if (enemy.type !== 'pylon' && (enemy.isBoss || Math.random() < .12)) {
       state.pickups.push({ type: 'core', rare: enemy.isBoss, x: clamp(enemy.x + 18, 45, W - 45),
         y: clamp(enemy.y, 95, H - 45), r: 17, life: enemy.isBoss ? Infinity : 25, phase: 0 });
     }
-    if (enemy.isBoss) { state.bossesKilled++; onEvent({ type: 'bossDefeated', name: enemy.name }); }
+    if (enemy.parent) { onEvent({ type: 'partBroken' }); floatText(enemy.x, enemy.y - 35, '部件摧毁', '#b7afff'); }
+    if (state.mission?.target === enemy && state.mission.status === 'active') rewardMission();
+    if (enemy.isBoss) {
+      state.enemies = state.enemies.filter((e) => e.parent !== enemy);
+      state.bossesKilled++; onEvent({ type: 'bossDefeated', name: enemy.name }); }
     sound('kill'); onEvent({ type: 'kill', score: state.score, kills: state.kills, enemy: enemy.type });
     emitState();
   }
@@ -736,10 +811,65 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     enemy.y = clamp(enemy.y, 100, H - 24);
   }
 
+  function missionSnapshot() {
+    const m = state.mission;
+    if (!m || m.status === 'pending') return null;
+    const names = { cache: '限时补给箱', bounty: '悬赏精英', relay: '重启中继站' };
+    return { type: m.type, status: m.status, name: names[m.type], seconds: Math.ceil(m.time),
+      progress: m.type === 'bounty' ? 1 - (m.target?.hp || 0) / (m.target?.maxHp || 1) : m.charge / (m.type === 'relay' ? 3 : .8),
+      action: m.type === 'bounty' ? '击败金色标记目标' : `靠近并停留 ${m.type === 'relay' ? '3' : '0.8'} 秒`,
+      reward: m.type === 'relay' || m.type === 'bounty' && state.wave >= 9 ? '稀有核心 + 600 分' : '强化核心 + 300 分' };
+  }
+
+  function rewardMission() {
+    const m = state.mission;
+    if (!m || m.status !== 'active') return;
+    m.status = 'complete';
+    const rare = m.type === 'relay' || m.type === 'bounty' && state.wave >= 9;
+    state.score += rare ? 600 : 300;
+    if (m.type === 'cache') {
+      state.player.health = Math.min(state.player.maxHealth, state.player.health + 15);
+      state.player.ammo = state.player.maxAmmo; state.player.reload = 0;
+    }
+    state.player.invulnerable = Math.max(state.player.invulnerable, 1);
+    saveBest(state.score); sound('pickup');
+    onEvent({ type: 'missionComplete', rare, cache: m.type === 'cache' });
+    state.afterChoices = 'playing'; offerChoice(rare);
+  }
+
+  function updateMission(dt) {
+    if (state.waveCleared) return;
+    state.waveTime += dt;
+    const m = state.mission;
+    if (!m || !['pending', 'active'].includes(m.status)) return;
+    if (m.status === 'pending') {
+      if (state.waveTime < 4) return;
+      const p = state.player;
+      const spots = [{ x: 155, y: 185 }, { x: 1125, y: 185 }, { x: 155, y: 580 }, { x: 1125, y: 580 }]
+        .sort((a, b) => Math.hypot(b.x - p.x, b.y - p.y) - Math.hypot(a.x - p.x, a.y - p.y));
+      Object.assign(m, spots[0], { status: 'active' });
+      if (m.type === 'bounty') {
+        m.target = spawnEnemy(state.wave >= 9 ? 'charger' : 'brute', { x: m.x, y: m.y });
+        m.target.hp *= 1.6; m.target.maxHp = m.target.hp; m.target.optional = true;
+        m.target.color = '#ffe094'; m.target.speed *= 1.12;
+      }
+      onEvent({ type: 'missionStart', name: missionSnapshot().name });
+    }
+    m.time = Math.max(0, m.time - dt);
+    if (m.time <= 0) { m.status = 'missed'; onEvent({ type: 'missionMissed' }); return; }
+    if (m.type !== 'bounty') {
+      const close = Math.hypot(state.player.x - m.x, state.player.y - m.y) < 47;
+      m.charge = close ? m.charge + dt : Math.max(0, m.charge - dt * .4);
+      if (m.charge >= (m.type === 'relay' ? 3 : .8)) rewardMission();
+    }
+  }
+
   function updateWorld(dt) {
     const p = state.player;
     p.shieldDelay = Math.max(0, p.shieldDelay - dt);
     if (p.upgrades.shield && p.shieldDelay <= 0) p.shield = Math.min(p.upgrades.shield * 18, p.shield + dt * 7);
+    updateMission(dt);
+    if (phase !== 'playing') return;
     if (state.wave >= 4 && !state.waveCleared && !state.plan.boss) {
       state.hazardTimer -= dt;
       if (state.hazardTimer <= 0) {
@@ -750,7 +880,12 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     for (let i = state.zones.length - 1; i >= 0; i--) {
       const zone = state.zones[i];
       if (zone.warn > 0) zone.warn -= dt;
-      else { zone.life -= dt; if (Math.hypot(zone.x - p.x, zone.y - p.y) < zone.r + p.r) hurtPlayer(zone.damage, p.x, p.y); }
+      else {
+        zone.life -= dt;
+        const hit = zone.kind === 'beam' ? segmentDistanceSquared(zone.x, zone.y, zone.bx, zone.by, p.x, p.y) < (zone.r + p.r - 3) ** 2 &&
+          !coverHit(zone.x, zone.y, p.x, p.y, 0) : Math.hypot(zone.x - p.x, zone.y - p.y) < zone.r + p.r;
+        if (hit) hurtPlayer(zone.damage, p.x, p.y);
+      }
       if (zone.life <= 0) state.zones.splice(i, 1);
     }
     const supply = state.supply;
@@ -765,14 +900,14 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     if (p.upgrades.drone) {
       p.droneTimer -= dt;
       if (p.droneTimer <= 0 && state.enemies.length) {
-        const count = p.upgrades.drone >= 3 ? 2 : 1;
+        const count = (p.upgrades.drone >= 3 ? 2 : 1) + (p.evolutions.includes('swarm') ? 1 : 0);
         for (let i = 0; i < count; i++) {
           const x = p.x + Math.cos(state.time * 1.8 + i * Math.PI) * 48;
           const y = p.y + Math.sin(state.time * 1.8 + i * Math.PI) * 48;
           const target = [...state.enemies].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
           projectile(x, y, Math.atan2(target.y - y, target.x - x), 14 + p.upgrades.drone * 6, { drone: true });
         }
-        p.droneTimer = .9 / (1 + p.upgrades.drone * .3);
+        p.droneTimer = .9 / (1 + p.upgrades.drone * .3) * (p.evolutions.includes('swarm') ? .75 : 1);
       }
     }
     for (let i = state.arcs.length - 1; i >= 0; i--) { state.arcs[i].life -= dt; if (state.arcs[i].life <= 0) state.arcs.splice(i, 1); }
@@ -836,13 +971,16 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
         const slots = Math.max(0, state.plan.cap - state.enemies.length);
         const count = Math.min(state.plan.group, state.spawnsLeft, slots);
         for (let i = 0; i < count; i++) {
-          spawnEnemy(state.plan.boss ? 'boss' : state.plan.elite && state.spawnsLeft === 1 ? 'elite' : undefined, { side });
+          const type = state.plan.boss ? 'boss' : state.plan.elite && state.spawnsLeft === 1 ? 'elite' :
+            state.plan.pool[(state.waveTotal - state.spawnsLeft) % state.plan.pool.length];
+          spawnEnemy(type, { side });
           state.spawnsLeft--;
         }
         state.spawnTimer = count ? state.plan.interval * rand(.85, 1.15) : .25;
       }
     }
     updateBullets(dt);
+    if (phase !== 'playing') return;
     updateEnemies(dt);
     if (phase !== 'playing') return;
     updateEnemyBullets(dt);
@@ -852,15 +990,17 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     updatePickups(dt);
     updateEffects(dt);
     if (phase !== 'playing') return;
-    if (!state.waveCleared && state.spawnsLeft === 0 && state.enemies.length === 0) completeWave();
+    if (!state.waveCleared && state.spawnsLeft === 0 && state.enemies.every((e) => e.optional)) completeWave();
     lastHud += dt;
     if (lastHud >= .08) { emitState(); lastHud = 0; }
   }
 
   function bulletImpact(b, enemy) {
     const p = state.player, u = p.upgrades;
+    const wasFrozen = enemy.slowTimer > 0;
     if (!b.drone && u.freeze) { enemy.slowTimer = 1 + u.freeze * .4; enemy.slowFactor = 1 - u.freeze * .15; }
-    damageEnemy(enemy, b.damage);
+    const frostBonus = !b.drone && p.evolutions.includes('frost') && wasFrozen ? 1.3 : 1;
+    damageEnemy(enemy, b.damage * frostBonus);
     if (!b.drone && u.explosive && !b.exploded) {
       b.exploded = true;
       const evolved = p.evolutions.includes('siege'), radius = evolved ? 145 : 50 + u.explosive * 18;
@@ -891,7 +1031,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
         if (target) {
           const angle = Math.atan2(b.vy, b.vx), desired = Math.atan2(target.y - b.y, target.x - b.x);
           const difference = Math.atan2(Math.sin(desired - angle), Math.cos(desired - angle));
-          const turn = clamp(difference, -dt * (2 + state.player.upgrades.homing), dt * (2 + state.player.upgrades.homing));
+          const turn = clamp(difference, -dt * (2 + state.player.upgrades.homing + (state.player.evolutions.includes('frost') ? 2 : 0)), dt * (2 + state.player.upgrades.homing));
           b.vx = Math.cos(angle + turn) * 950; b.vy = Math.sin(angle + turn) * 950;
         }
       }
@@ -925,16 +1065,28 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     }
   }
 
+  function bossHint(enemy) {
+    if (enemy.type === 'elite') return '精英 · 留意冲锋路线';
+    if (enemy.recovery > 0) return '装甲过热 · 受到伤害 +45%';
+    const parts = state.enemies.filter((e) => e.parent === enemy).length;
+    if (parts) return `护卫部件 ${parts}/2 · 当前减伤 ${parts * 17.5}%`;
+    return state.wave >= 10 ? '激光可借掩体躲避 · 警戒圈内会轰炸' : '横向闪避冲撞 · 过热时集中攻击';
+  }
+
   function updateBoss(enemy, dt) {
-    const p = state.player;
+    const p = state.player, final = enemy.type === 'boss' && state.wave >= 10;
     if (!enemy.enraged && enemy.hp <= enemy.maxHp * .5) {
-      enemy.enraged = true; enemy.fireTimer = .5;
+      enemy.enraged = true;
       state.rings.push({ x: enemy.x, y: enemy.y, r: enemy.r, max: 260, life: .8, total: .8, color: enemy.color });
       onEvent({ type: 'bossPhase', name: enemy.name }); emitState();
     }
+    if (enemy.recovery > 0) { enemy.recovery = Math.max(0, enemy.recovery - dt); return; }
     if (enemy.dashTime > 0) {
-      enemy.dashTime -= dt; moveEnemy(enemy, Math.cos(enemy.attackAngle) * 640, Math.sin(enemy.attackAngle) * 640, dt);
+      enemy.dashTime -= dt;
+      moveEnemy(enemy, Math.cos(enemy.attackAngle) * 640, Math.sin(enemy.attackAngle) * 640, dt);
+      const boundary = enemy.x <= enemy.r + 20 || enemy.x >= W - enemy.r - 20 || enemy.y <= 105 || enemy.y >= H - enemy.r - 20;
       enemy.x = clamp(enemy.x, enemy.r + 20, W - enemy.r - 20); enemy.y = clamp(enemy.y, 105, H - enemy.r - 20);
+      if (boundary || enemy.dashTime <= 0) { enemy.dashTime = 0; enemy.recovery = 1.8; }
       return;
     }
     if (enemy.telegraph > 0) {
@@ -942,34 +1094,67 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       if (enemy.telegraph <= 0) {
         if (enemy.attack === 'charge') enemy.dashTime = .7;
         else if (enemy.attack === 'summon') {
-          for (let i = 0; i < (enemy.enraged ? 5 : 3) && state.enemies.length < state.plan.cap; i++) {
-            const angle = i * TAU / 5;
-            spawnEnemy(i % 2 ? 'gunner' : 'runner', { x: clamp(enemy.x + Math.cos(angle) * 100, 60, W - 60), y: clamp(enemy.y + Math.sin(angle) * 100, 110, H - 60) });
+          const count = enemy.enraged ? 4 : 2;
+          for (let i = 0; i < count && state.enemies.length < state.plan.cap; i++) {
+            const angle = i * TAU / count;
+            spawnEnemy(i % 2 ? 'gunner' : 'runner', { x: clamp(enemy.x + Math.cos(angle) * 110, 60, W - 60), y: clamp(enemy.y + Math.sin(angle) * 110, 110, H - 60) });
           }
-        } else {
-          const half = enemy.enraged ? 5 : 3;
-          for (let i = -half; i <= half; i++) fireEnemyBullet(enemy, enemy.attackAngle + i * .17, enemy.enraged ? 330 : 265);
-          if (state.wave >= 10 && enemy.enraged) for (let i = 0; i < 12; i++) fireEnemyBullet(enemy, i * TAU / 12 + state.time * .2, 185);
-        }
-        enemy.fireTimer = enemy.enraged ? 1.5 : 2.35;
+          enemy.recovery = 1.2;
+        } else if (enemy.attack === 'ring') {
+          // A visible safe wedge remains between the two marked radial boundaries.
+          for (let i = 0; i < 20; i++) {
+            const a = enemy.attackAngle + i * TAU / 20;
+            const difference = Math.atan2(Math.sin(a - enemy.safeAngle), Math.cos(a - enemy.safeAngle));
+            if (Math.abs(difference) > .42) fireEnemyBullet(enemy, a, 210);
+          }
+          enemy.recovery = 1.5;
+        } else if (!['beam', 'bombard', 'slam'].includes(enemy.attack)) {
+          const half = enemy.enraged ? 4 : 3;
+          for (let i = -half; i <= half; i++) fireEnemyBullet(enemy, enemy.attackAngle + i * .17, enemy.enraged ? 320 : 265);
+          enemy.recovery = .9;
+        } else enemy.recovery = enemy.attack === 'beam' ? 2.3 : 1.6;
+        enemy.fireTimer = enemy.enraged ? .85 : 1.35;
       }
       return;
     }
     const angle = Math.atan2(p.y - enemy.y, p.x - enemy.x);
-    if (Math.hypot(p.x - enemy.x, p.y - enemy.y) > 250) moveEnemy(enemy, Math.cos(angle) * enemy.speed, Math.sin(angle) * enemy.speed, dt);
+    if (Math.hypot(p.x - enemy.x, p.y - enemy.y) > 280) moveEnemy(enemy, Math.cos(angle) * enemy.speed, Math.sin(angle) * enemy.speed, dt);
     enemy.fireTimer -= dt;
     if (enemy.fireTimer <= 0) {
-      enemy.attack = ['fan', 'charge', 'summon'][enemy.attackIndex++ % 3];
-      enemy.attackAngle = angle; enemy.telegraph = enemy.enraged ? .7 : 1.05;
+      const attacks = final ? (enemy.enraged ? ['beam','bombard','ring','summon'] : ['beam','bombard','summon']) :
+        enemy.type === 'elite' ? ['fan','charge'] : ['fan','charge','slam','charge'];
+      enemy.attack = attacks[enemy.attackIndex++ % attacks.length];
+      enemy.attackAngle = angle;
+      enemy.telegraph = enemy.attack === 'beam' ? 1.45 : enemy.attack === 'bombard' ? 1.4 : 1.05;
+      if (enemy.attack === 'beam') {
+        state.zones.push({ kind: 'beam', x: enemy.x, y: enemy.y,
+          bx: enemy.x + Math.cos(angle) * 1500, by: enemy.y + Math.sin(angle) * 1500,
+          r: enemy.enraged ? 30 : 23, warn: 1.45, totalWarn: 1.45, life: .8, damage: 23 });
+      } else if (enemy.attack === 'bombard') {
+        for (let i = 0; i < (enemy.enraged ? 4 : 3); i++) {
+          state.zones.push({ x: clamp(p.x + (i - 1) * 140, 90, W - 90), y: clamp(p.y + (i % 2) * 95, 170, H - 80),
+            r: 72, warn: 1.4, totalWarn: 1.4, life: 1.1, damage: 20 });
+        }
+      } else if (enemy.attack === 'slam') {
+        state.zones.push({ x: enemy.x, y: enemy.y, r: 160, warn: 1.05, totalWarn: 1.05, life: .45, damage: 22 });
+      } else if (enemy.attack === 'ring') enemy.safeAngle = angle + Math.PI / 2;
     }
   }
 
   function updateEnemies(dt) {
     const p = state.player;
     for (const e of [...state.enemies]) {
+      if (!state.enemies.includes(e)) continue;
       e.phase += dt * (e.spin || 1); e.hitFlash = Math.max(0, e.hitFlash - dt);
       e.contactTimer = Math.max(0, e.contactTimer - dt); e.slowTimer = Math.max(0, e.slowTimer - dt);
       const dx = p.x - e.x, dy = p.y - e.y, distance = Math.max(1, Math.hypot(dx, dy)), nx = dx / distance, ny = dy / distance;
+      if (e.type === 'pylon') {
+        if (!state.enemies.includes(e.parent)) continue;
+        const orbit = state.time * .65 + e.orbit;
+        e.x = clamp(e.parent.x + Math.cos(orbit) * 115, 40, W - 40);
+        e.y = clamp(e.parent.y + Math.sin(orbit) * 85, 110, H - 40);
+        continue;
+      }
       if (e.isBoss) updateBoss(e, dt);
       else if (e.type === 'charger') {
         if (e.dashTime > 0) { e.dashTime -= dt; moveEnemy(e, Math.cos(e.attackAngle) * 460, Math.sin(e.attackAngle) * 460, dt); }
@@ -1169,6 +1354,16 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       polygon([[-23,0],[-7,-22],[19,-14],[28,0],[19,14],[-7,22]], '#48283e', e.color, 2);
       roundRect(7,-4,31,8,2,'#e4b9d7','#ffdbf2');
       ctx.fillStyle = '#fff0fb'; ctx.beginPath(); ctx.arc(-3,0,6,0,TAU); ctx.fill();
+    } else if (e.type === 'pylon') {
+      polygon([[-20,0],[0,-20],[20,0],[0,20]], '#352f5a', '#c5baff', 2);
+      ctx.fillStyle = '#f2eaff'; ctx.fillRect(-6,-6,12,12);
+    } else if (e.type === 'boss' && state.wave < 10) {
+      roundRect(-45,-47,85,23,5,'#323c41','#aab7aa');
+      roundRect(-45,24,85,23,5,'#323c41','#aab7aa');
+      for (let x=-35;x<40;x+=15) { ctx.fillStyle='#15252b';ctx.fillRect(x,-44,6,17);ctx.fillRect(x,27,6,17); }
+      polygon([[-42,-24],[19,-29],[46,-12],[46,12],[19,29],[-42,24]],'#69543a',e.color,3);
+      roundRect(8,-9,55,18,3,'#26363c','#ffdf99');
+      ctx.fillStyle=e.recovery>0?'#ff774e':'#ffe5aa';ctx.fillRect(-22,-15,20,30);
     } else {
       ctx.scale(e.r / 53, e.r / 53);
       ctx.rotate(e.phase * 0.12);
@@ -1188,6 +1383,13 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     if (e.slowTimer > 0 || e.enraged) {
       ctx.strokeStyle = e.enraged ? '#ff7799' : '#a3eaff'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(e.x,e.y,e.r+6,0,TAU); ctx.stroke();
+    }
+    if (e.recovery > 0 && e.type === 'boss') {
+      ctx.fillStyle='#ffcf87';ctx.font='700 12px system-ui';ctx.textAlign='center';ctx.fillText('过热 · 易伤',e.x,e.y-e.r-15);
+    }
+    if (e.optional && state.mission?.status === 'active') {
+      ctx.strokeStyle='#ffe094';ctx.lineWidth=2;ctx.beginPath();ctx.arc(e.x,e.y,e.r+10,0,TAU);ctx.stroke();
+      ctx.fillStyle='#ffe094';ctx.font='700 12px system-ui';ctx.textAlign='center';ctx.fillText('悬赏目标',e.x,e.y-e.r-20);
     }
     if (!e.isBoss && e.hp < e.maxHp) {
       const barW = e.type === 'boss' ? 104 : e.r * 2;
@@ -1329,10 +1531,17 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       const warning = zone.warn > 0;
       ctx.fillStyle = warning ? 'rgba(255,180,93,.08)' : 'rgba(255,76,101,.24)';
       ctx.strokeStyle = warning ? '#ffca7c' : '#ff6e88'; ctx.lineWidth = warning ? 2 : 3;
+      if (zone.kind === 'beam') {
+        const angle = Math.atan2(zone.by-zone.y,zone.bx-zone.x);
+        ctx.save();ctx.translate(zone.x,zone.y);ctx.rotate(angle);
+        ctx.fillRect(0,-zone.r,1500,zone.r*2);ctx.strokeRect(0,-zone.r,1500,zone.r*2);
+        ctx.font='700 12px system-ui';ctx.fillStyle=ctx.strokeStyle;ctx.fillText(warning?'激光预警 · 借掩体躲避':'激光',120,-zone.r-8);
+        ctx.restore();continue;
+      }
       ctx.beginPath(); ctx.arc(zone.x,zone.y,zone.r,0,TAU); ctx.fill(); ctx.stroke();
       ctx.font='700 12px system-ui, sans-serif';ctx.textAlign='center';ctx.fillStyle=ctx.strokeStyle;
       ctx.fillText(warning ? '轰炸预警' : '危险区域',zone.x,zone.y+4);
-      if (warning) { ctx.beginPath();ctx.arc(zone.x,zone.y,zone.r*.7,0,TAU*(1-zone.warn/1.3));ctx.stroke(); }
+      if (warning) { ctx.beginPath();ctx.arc(zone.x,zone.y,zone.r*.7,0,TAU*clamp(1-zone.warn/(zone.totalWarn || 1.3),0,1));ctx.stroke(); }
     }
     for (const rect of state.cover) {
       ctx.lineWidth=2; roundRect(rect.x,rect.y,rect.w,rect.h,5,'#182d38','#537782');
@@ -1341,6 +1550,14 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       ctx.moveTo(rect.x+11,rect.y+11);ctx.lineTo(rect.x+rect.w-11,rect.y+rect.h-11);
       ctx.moveTo(rect.x+rect.w-11,rect.y+11);ctx.lineTo(rect.x+11,rect.y+rect.h-11);ctx.stroke();
       ctx.fillStyle='#78c6bf';ctx.fillRect(rect.x+10,rect.y+3,rect.w-20,3);
+    }
+    const mission=state.mission;
+    if (mission?.status === 'active' && mission.type !== 'bounty') {
+      ctx.strokeStyle='#ffd890';ctx.lineWidth=2;
+      roundRect(mission.x-21,mission.y-18,42,36,4,'#3a3220','#ffd890');
+      ctx.fillStyle='#ffe5b1';ctx.font='800 18px system-ui';ctx.textAlign='center';ctx.fillText(mission.type==='relay'?'ϟ':'✦',mission.x,mission.y+6);
+      ctx.font='700 12px system-ui';ctx.fillText(`${mission.type==='relay'?'中继站':'补给箱'} · ${Math.ceil(mission.time)}s`,mission.x,mission.y+40);
+      ctx.beginPath();ctx.arc(mission.x,mission.y,31,-Math.PI/2,-Math.PI/2+TAU*clamp(mission.charge/(mission.type==='relay'?3:.8),0,1));ctx.stroke();
     }
     const supply=state.supply;
     if(supply) {
@@ -1367,9 +1584,12 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
         ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(560,0);ctx.stroke();ctx.restore();
       } else if(e.attack==='snipe') {
         ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(e.x+Math.cos(angle)*1000,e.y+Math.sin(angle)*1000);ctx.stroke();
+      } else if(e.attack==='ring') {
+        ctx.fillStyle='rgba(115,240,181,.12)';ctx.strokeStyle='#83edb1';
+        ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.arc(e.x,e.y,420,e.safeAngle-.42,e.safeAngle+.42);ctx.closePath();ctx.fill();ctx.stroke();
       } else if(e.attack==='fan') {
         ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.arc(e.x,e.y,220,angle-.65,angle+.65);ctx.closePath();ctx.fill();ctx.stroke();
-      } else {ctx.beginPath();ctx.arc(e.x,e.y,100,0,TAU);ctx.stroke();}
+      } else if(e.attack==='summon') {ctx.beginPath();ctx.arc(e.x,e.y,100,0,TAU);ctx.stroke();}
     }
     ctx.restore();
   }
@@ -1382,7 +1602,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       ctx.beginPath();ctx.arc(p.x,p.y,37,0,TAU);ctx.stroke();ctx.globalAlpha=1;
     }
     if(p.upgrades.drone) {
-      const count=p.upgrades.drone>=3?2:1;
+      const count=(p.upgrades.drone>=3?2:1)+(p.evolutions.includes('swarm')?1:0);
       for(let i=0;i<count;i++) {
         const x=p.x+Math.cos(state.time*1.8+i*Math.PI)*48,y=p.y+Math.sin(state.time*1.8+i*Math.PI)*48;
         polygon([[x-8,y],[x,y-7],[x+8,y],[x,y+7]],'#1c524c','#b3ffe8',1.5);
@@ -1453,7 +1673,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   state.player=playerFresh();
   emitState();
   raf=requestAnimationFrame(frame);
-  return { start, startEndless, continueEndless, chooseUpgrade, pause, resume, restart, dash, reload: beginReload,
+  return { start, startEndless, continueEndless, chooseUpgrade, rerollChoices, skipChoice, pause, resume, restart, dash, reload: beginReload,
     setTouchMove, setTouchFire, setTouchAim, togglePause, toggleMute, destroy,
     getState: snapshot };
 }
