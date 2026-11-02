@@ -1,4 +1,4 @@
-import { mountGame } from './game.js?v=3.0';
+import { mountGame } from './game.js?v=3.1';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('gameCanvas');
@@ -30,11 +30,35 @@ function showToast(message, duration = 1400) {
   toastTimer = setTimeout(() => toast.classList.remove('is-visible'), duration);
 }
 
+function upgradeIcon(id) {
+  const paths = {
+    heavy: '<path d="M9 20V9l3-6 3 6v11H9Zm0-7h6M9 17h6"/>',
+    pierce: '<path d="M3 8h12m-5-4 5 4-5 4M5 17h16m-5-4 5 4-5 4"/>',
+    rapid: '<path d="m13 2-8 11h6l-1 9 9-12h-6l1-8Z"/>',
+    multi: '<path d="M3 12h17m-5-4 5 4-5 4M3 5h14m-4-3 4 3-4 3M3 19h14m-4-3 4 3-4 3"/>',
+    explosive: '<path d="m12 2 2 6 6-2-3 6 5 3-7 1-3 6-2-6-7 1 4-5-4-4 7 1 2-7Z"/>',
+    ricochet: '<path d="m3 17 7-7 4 4 7-9m-6 0h6v6"/>',
+    chain: '<path d="m8 4 4 6-4 4 8 6M3 7l5-3 4 1m4 15 5-3-1-4"/>',
+    freeze: '<path d="M12 2v20M3 7l18 10M3 17 21 7M8 4l4 3 4-3M8 20l4-3 4 3M3 11l4-2-1-4m12 14-1-4 4-2M3 13l4 2-1 4M18 5l-1 4 4 2"/>',
+    homing: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/>',
+    drone: '<circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="m6 6 12 12M18 6 6 18"/><circle cx="12" cy="12" r="3"/>',
+    shield: '<path d="m12 2 8 4v6c0 5-8 10-8 10S4 17 4 12V6l8-4Zm0 4v11"/>',
+    reload: '<path d="M20 10a8 8 0 1 0-2 8m2-15v7h-7"/>',
+    magazine: '<rect x="7" y="3" width="10" height="18" rx="1"/><path d="M6 3h12M6 21h12M10 8h4m-4 4h4m-4 4h4"/>',
+    dash: '<path d="m4 5 8 7-8 7m8-14 8 7-8 7"/>',
+    overload: '<path d="m12 2 9 10-9 10L3 12l9-10Zm0 5v7m0 3v1"/>',
+    accelerator: '<path d="m4 17 7-11 2 7 7-7M3 21h18"/>',
+    evolution: '<path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z"/>',
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[id] || paths.evolution}</svg>`;
+}
+
 function render(state) {
+  document.documentElement.dataset.phase = state.phase;
   for (const [phase, screen] of Object.entries(screens)) screen.hidden = state.phase !== phase;
   $('hudWave').textContent = String(Math.max(1, state.wave)).padStart(2, '0');
   $('hudScore').textContent = paddedScore(state.score);
-  $('hudHealth').textContent = String(state.health);
+  $('hudHealth').textContent = `${state.health} / ${state.maxHealth}`;
   $('hudAmmo').textContent = `${state.ammo} / ${state.maxAmmo}`;
   $('hudBest').textContent = paddedScore(state.bestScore);
   $('hudShield').textContent = state.shield > 0 ? `护盾 ${state.shield}` : '';
@@ -76,19 +100,32 @@ function render(state) {
     lastBuffs = signature;
     const badges = state.upgradeList.map((upgrade) => {
       const badge = document.createElement('span');
-      badge.textContent = `${upgrade.name} ${upgrade.level}`;
-      badge.style.setProperty('--buff-color', upgrade.color);
-      badge.title = `Lv.${upgrade.level}/${upgrade.max} · ${upgrade.description}`;
+      badge.className = 'buff-badge';
+      badge.innerHTML = upgradeIcon(upgrade.id);
+      const name = document.createElement('strong');
+      name.textContent = upgrade.name;
+      const levels = document.createElement('span');
+      levels.className = 'buff-level';
+      for (let level = 1; level <= upgrade.max; level++) {
+        const pip = document.createElement('i');
+        pip.classList.toggle('is-filled', level <= upgrade.level);
+        levels.append(pip);
+      }
+      badge.append(name, levels);
+      badge.title = `${upgrade.name} Lv.${upgrade.level}/${upgrade.max} · ${upgrade.description}`;
+      badge.setAttribute('aria-label', badge.title);
       return badge;
     });
     for (const evolution of state.evolutions) {
-      const badge = document.createElement('span'); badge.className = 'evolution-badge';
-      badge.textContent = `✦ ${evolution.name}`; badge.title = evolution.description;
+      const badge = document.createElement('span'); badge.className = 'buff-badge evolution-badge';
+      badge.innerHTML = upgradeIcon('evolution'); const name = document.createElement('strong'); name.textContent = evolution.name; badge.append(name); badge.title = evolution.description;
       badge.style.setProperty('--buff-color', evolution.color); badges.unshift(badge);
     }
     strip.replaceChildren(...badges);
   }
   strip.hidden = !strip.children.length || state.phase === 'idle';
+  $('buildEmpty').hidden = !strip.hidden;
+  $('desktopDash').style.setProperty('--dash-progress', `${Math.round(state.dash * 100)}%`);
 
   const choiceSignature = JSON.stringify([state.choices, state.choiceRare]);
   if (choiceSignature !== lastChoices) {
@@ -126,7 +163,7 @@ function render(state) {
   $('evolutionRoutes').hidden = !routes.length;
   $('upgradeHint').textContent = state.choicesRemaining ? `战斗已暂停 · 还有 ${state.choicesRemaining} 个核心等待选择` : '战斗已暂停 · 本局持续生效 · 按 1 / 2 / 3 选择';
 
-  const labels = { idle: '等待部署', playing: '作战中', paused: '已暂停', choosing: '选择强化', victory: '封锁已突破', gameover: '任务结束' };
+  const labels = { idle: '准备作战', playing: '作战中', paused: '已暂停', choosing: '选择强化', victory: '封锁已突破', gameover: '任务结束' };
   $('statusText').textContent = labels[state.phase];
   $('pauseBtn').disabled = !['playing', 'paused'].includes(state.phase);
   $('pauseBtn').setAttribute('aria-label', state.phase === 'paused' ? '继续游戏' : '暂停游戏');
