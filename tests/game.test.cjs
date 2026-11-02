@@ -174,3 +174,51 @@ game.restart();assert.equal(s.wave,1);assert.equal(s.rerolls,2);assert.equal(s.m
 assert.ok(Object.values(s.player.upgrades).every(v=>v===0));
 console.log('PASS v3: progression/recovery, 16 upgrades, 5 evolutions, guided choices/reroll/exclusivity, optional missions/rewards/timeout, distinct Bosses/parts/laser cover/overheat, campaign/endless/reset.');
 
+// Rendered art must load before play, and an interrupted load must be retryable.
+const requestedImages = [];
+class ArtImage {
+  constructor() { this.complete = false; this.naturalWidth = 0; this.naturalHeight = 0; requestedImages.push(this); }
+  load() {
+    this.complete = true;
+    const atlas = this.src.includes('units-ice');
+    this.naturalWidth = atlas ? 1448 : 1672;
+    this.naturalHeight = atlas ? 1086 : 941;
+    this.onload();
+  }
+}
+const artEnvironment = { ...env, Image: ArtImage };
+vm.createContext(artEnvironment);
+vm.runInContext(source + '\nglobalThis.mountGame = mountGame;', artEnvironment);
+const artGame = artEnvironment.mountGame(new Canvas());
+assert.equal(artGame.getState().assetsReady, false);
+assert.equal(artGame.start(), false, 'Gameplay waits for both art resources');
+requestedImages[0].load();
+assert.equal(artGame.getState().assetsReady, false);
+requestedImages[1].load();
+assert.equal(artGame.getState().assetsReady, true);
+artGame.start();
+const artTest = artEnvironment.test;
+assert.ok(artTest.state.cover.some(rect => rect.scenery));
+assert.ok(artTest.coverHit(1100, 30, 1100, 240), 'Painted architecture blocks shots');
+for (const side of [0, 1, 2, 3]) {
+  const unit = artTest.spawnEnemy('brute', { side });
+  for (const rect of artTest.state.cover) {
+    const dx = unit.x - Math.max(rect.x, Math.min(rect.x + rect.w, unit.x));
+    const dy = unit.y - Math.max(rect.y, Math.min(rect.y + rect.h, unit.y));
+    assert.ok(Math.hypot(dx, dy) >= unit.r, 'Enemies enter on accessible floor');
+  }
+}
+artTest.draw();
+artGame.retryAssets();
+requestedImages[0].onload();
+assert.equal(artGame.getState().assetsReady, false, 'Previous loading callbacks cannot complete a retry');
+requestedImages[3].onerror();
+assert.equal(artGame.getState().assetsError, true);
+assert.equal(artGame.start(), false);
+artGame.retryAssets();
+requestedImages[4].load();requestedImages[5].load();
+assert.equal(artGame.getState().assetsReady, true);
+assert.equal(artGame.getState().assetsError, false);
+artGame.destroy();
+console.log('PASS art: loading gate, stale callbacks, failure/retry, rendered terrain collision and accessible enemy entries.');
+

@@ -349,3 +349,20 @@ html.touch-device .touch-controls:not([hidden]) { display: block; position: fixe
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* The menu displays the same rendered armored vehicle used in combat. */
+.vehicle-portrait {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  background-image: url('./assets/rover-hero.png?v=3.2');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 14px 12px oklch(0.28 0.04 250 / .22));
+}
+.intro-art { height: 100%; align-items: center; padding: 0 1%; }
+.art-status { max-width: 290px; margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+#retryAssetsBtn { margin-top: 10px; }
+@media (orientation: portrait) and (max-width: 600px) {
+  .intro-art { height: 37%; width: 98%; right: -8%; opacity: .95; }
+}

@@ -1,4 +1,4 @@
-import { mountGame } from './game.js?v=3.1';
+import { mountGame } from './game.js?v=3.2';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('gameCanvas');
@@ -55,6 +55,11 @@ function upgradeIcon(id) {
 
 function render(state) {
   document.documentElement.dataset.phase = state.phase;
+  $('startBtn').disabled = !state.assetsReady;
+  $('startEndlessBtn').disabled = !state.assetsReady;
+  $('artStatus').hidden = state.assetsReady;
+  $('artStatus').textContent = state.assetsError ? '素材加载失败，请重新加载后开始作战。' : '正在加载场景和角色素材…';
+  $('retryAssetsBtn').hidden = !state.assetsError;
   for (const [phase, screen] of Object.entries(screens)) screen.hidden = state.phase !== phase;
   $('hudWave').textContent = String(Math.max(1, state.wave)).padStart(2, '0');
   $('hudScore').textContent = paddedScore(state.score);
@@ -220,6 +225,7 @@ function onEvent(event) {
 const game = mountGame(canvas, { onState: render, onEvent });
 $('rerollBtn').addEventListener('click', () => game.rerollChoices());
 $('skipChoiceBtn').addEventListener('click', () => game.skipChoice());
+$('retryAssetsBtn').addEventListener('click', () => game.retryAssets());
 $('startBtn').addEventListener('click', () => game.start());
 $('startEndlessBtn').addEventListener('click', () => game.startEndless());
 $('resumeBtn').addEventListener('click', () => game.resume());
