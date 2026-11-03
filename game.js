@@ -71,10 +71,26 @@ function wavePlan(wave, endless) {
     mission: !boss && wave % 3 === 0 ? (wave % 2 ? 'bounty' : 'cache') : null };
 }
 const ART_SOURCES = {
-  floor: './assets/arena-ice.png?v=3.4',
-  units: './assets/units-ice.png?v=3.4',
-  rover: './assets/rover-layered.png?v=3.4',
+  floor: './assets/arena-ice.png?v=3.5',
+  units: './assets/units-ice.png?v=3.5',
+  rover: './assets/rover-layered.png?v=3.5',
+  enemiesA: './assets/enemies-layered-a.png?v=3.5',
+  enemiesB: './assets/enemies-layered-b.png?v=3.5',
 };
+// Each atlas row contains a fixed body (left) and a detached cannon (right).
+// Pivots mark the body socket and the cannon hub in source pixels.
+const ENEMY_LAYERS = {
+  runner: { atlas:'enemiesA', row:0, body:[277,143], gun:[701,195], muzzle:934 },
+  gunner: { atlas:'enemiesA', row:1, body:[266,518], gun:[706,582], muzzle:915 },
+  brute: { atlas:'enemiesA', row:2, body:[278,868], gun:[683,944], muzzle:938 },
+  charger: { atlas:'enemiesA', row:3, body:[280,1297], gun:[710,1340], muzzle:911 },
+  splitter: { atlas:'enemiesB', row:0, body:[355,130], gun:[667,191], muzzle:908, scale:.82 },
+  sniper: { atlas:'enemiesB', row:1, body:[303,523], gun:[614,583], muzzle:996 },
+  boss: { atlas:'enemiesB', row:2, body:[287,881], bodyRect:[50,768,430,310], gun:[685,908], muzzle:996 },
+  finalBoss: { atlas:'enemiesB', row:3, body:[259,1298], bodyRect:[20,1090,480,446], gun:[711,1310], muzzle:953 },
+};
+const enemySprite = (enemy, wave) => enemy.type === 'elite' ? 'brute' : enemy.type === 'boss' && wave >= 10 ? 'finalBoss' : enemy.type;
+const enemyLayerScale = (enemy, layer) => enemy.r * .007 * (layer.scale || 1);
 // Source rectangles include a small transparent margin around each rendered object.
 const ART_FRAMES = {
   player: { x: 57, y: 107, w: 289, h: 194, pivot: .4 },
@@ -756,8 +772,12 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   }
 
   function fireEnemyBullet(enemy, angle, speed = 265) {
-    state.enemyBullets.push({ x: enemy.x + Math.cos(angle) * enemy.r,
-      y: enemy.y + Math.sin(angle) * enemy.r,
+    const layer = ENEMY_LAYERS[enemySprite(enemy, state.wave)];
+    const radial = enemy.attack === 'ring';
+    const muzzle = layer && !radial ? (layer.muzzle - layer.gun[0]) * enemyLayerScale(enemy, layer) : enemy.r;
+    const muzzleAngle = !radial && enemy.isBoss ? enemy.attackAngle : angle;
+    state.enemyBullets.push({ x: enemy.x + Math.cos(muzzleAngle) * muzzle,
+      y: enemy.y + Math.sin(muzzleAngle) * muzzle, origin: { x:enemy.x, y:enemy.y },
       vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
       r: enemy.type === 'boss' ? 7 : 5.5, life: 4,
       damage: enemy.type === 'boss' ? 16 : 12,
@@ -1340,14 +1360,17 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     const p = state.player;
     for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
       const b = state.enemyBullets[i];
-      const oldX = b.x, oldY = b.y;
+      const oldX = b.origin?.x ?? b.x, oldY = b.origin?.y ?? b.y;
+      b.origin = null;
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
-      if (coverHit(oldX, oldY, b.x, b.y, b.r) || b.life <= 0 || b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) {
-        state.enemyBullets.splice(i, 1); continue;
+      const cover = coverHit(oldX, oldY, b.x, b.y, b.r);
+      const endX = cover ? oldX+(b.x-oldX)*cover.t : b.x;
+      const endY = cover ? oldY+(b.y-oldY)*cover.t : b.y;
+      if (b.life > 0 && segmentDistanceSquared(oldX,oldY,endX,endY,p.x,p.y) < (b.r+p.r-3)**2) {
+        state.enemyBullets.splice(i, 1); hurtPlayer(b.damage, endX, endY); continue;
       }
-      if (Math.hypot(b.x - p.x, b.y - p.y) < b.r + p.r - 3) {
-        state.enemyBullets.splice(i, 1);
-        hurtPlayer(b.damage, b.x, b.y);
+      if (cover || b.life <= 0 || b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) {
+        state.enemyBullets.splice(i, 1); continue;
       }
     }
   }
@@ -1451,11 +1474,21 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   }
 
   function drawEnemy(enemy) {
-    const angle = Math.atan2(state.player.y - enemy.y, state.player.x - enemy.x);
-    let sprite = enemy.type;
-    if (enemy.type === 'elite') sprite = 'brute';
-    if (enemy.type === 'boss' && state.wave >= 10) sprite = 'finalBoss';
-    drawUnitSprite(sprite, enemy.x, enemy.y, angle, enemy.r * 3.15);
+    const aimingAtPlayer = Math.atan2(state.player.y - enemy.y, state.player.x - enemy.x);
+    const locked = enemy.telegraph > 0 || enemy.dashTime > 0 || (enemy.isBoss && enemy.recovery > 0);
+    const angle = locked ? enemy.attackAngle : aimingAtPlayer;
+    const sprite = enemySprite(enemy, state.wave), layer = ENEMY_LAYERS[sprite];
+    if (layer && art[layer.atlas]?.complete && art[layer.atlas].naturalWidth > 0) {
+      const scale = enemyLayerScale(enemy, layer), top = layer.row * 384;
+      const [bx,by,bw,bh] = layer.bodyRect || [0,top,512,384];
+      ctx.save(); ctx.translate(enemy.x, enemy.y);
+      ctx.drawImage(art[layer.atlas], bx, by, bw, bh,
+        (bx-layer.body[0])*scale, (by-layer.body[1])*scale, bw*scale, bh*scale);
+      ctx.rotate(angle);
+      ctx.drawImage(art[layer.atlas], 512, top, 512, 384,
+        (512-layer.gun[0])*scale, (top-layer.gun[1])*scale, 512*scale, 384*scale);
+      ctx.restore();
+    } else if (!layer) drawUnitSprite(sprite, enemy.x, enemy.y, 0, enemy.r * 3.15);
     if (enemy.hitFlash > 0) {
       ctx.save();
       ctx.globalAlpha = enemy.hitFlash / .11 * .2;

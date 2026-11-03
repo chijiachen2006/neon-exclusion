@@ -383,7 +383,7 @@ html.touch-device .touch-controls:not([hidden]) { display: block; position: fixe
 .vehicle-portrait {
   width: 100%;
   aspect-ratio: 3 / 2;
-  background-image: url('./assets/rover-hero.png?v=3.4');
+  background-image: url('./assets/rover-hero.png?v=3.5');
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;

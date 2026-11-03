@@ -15,7 +15,7 @@ const env = { HTMLCanvasElement: Canvas, Math: math, console, performance: { now
 let source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8').replace('export function mountGame', 'function mountGame');
 source = source.replace('  state.player=playerFresh();', `  globalThis.test = { state, update, beginWave, completeWave, spawnEnemy, damageEnemy, fireBullet,
     projectile, bulletImpact, updateBullets, updatePickups, updateBoss, updateWorld, updateEnemyBullets,
-    coverHit, resolveCover, offerChoice, openNextChoice, hurtPlayer, aimTouchWeapon, updateEnemies, draw, drawPlayer, UPGRADES, wavePlan };\n  state.player=playerFresh();`);
+    coverHit, resolveCover, offerChoice, openNextChoice, hurtPlayer, aimTouchWeapon, updateEnemies, fireEnemyBullet, draw, drawPlayer, drawEnemy, UPGRADES, wavePlan };\n  state.player=playerFresh();`);
 vm.createContext(env); vm.runInContext(source + '\nglobalThis.mountGame = mountGame;', env);
 const game = env.mountGame(new Canvas(), { onEvent: (event) => events.push(event) }), t = env.test, s = t.state;
 assert.equal(Object.keys(t.UPGRADES).length, 16);
@@ -190,13 +190,12 @@ const artEnvironment = { ...env, Image: ArtImage };
 vm.createContext(artEnvironment);
 vm.runInContext(source + '\nglobalThis.mountGame = mountGame;', artEnvironment);
 const artGame = artEnvironment.mountGame(new Canvas());
+const artResourceCount = requestedImages.length;
 assert.equal(artGame.getState().assetsReady, false);
-assert.equal(artGame.start(), false, 'Gameplay waits for both art resources');
-requestedImages[0].load();
-assert.equal(artGame.getState().assetsReady, false);
-requestedImages[1].load();
-assert.equal(artGame.getState().assetsReady, false, 'The separate rover layers must also be ready');
-requestedImages[2].load();
+assert.equal(artGame.start(), false, 'Gameplay waits for every required sprite layer');
+for(const image of requestedImages.slice(0,artResourceCount-1))image.load();
+assert.equal(artGame.getState().assetsReady, false, 'Enemy layers are required before play');
+requestedImages[artResourceCount-1].load();
 assert.equal(artGame.getState().assetsReady, true);
 artGame.start();
 const artTest = artEnvironment.test;
@@ -214,11 +213,11 @@ artTest.draw();
 artGame.retryAssets();
 requestedImages[0].onload();
 assert.equal(artGame.getState().assetsReady, false, 'Previous loading callbacks cannot complete a retry');
-requestedImages[5].onerror();
+requestedImages[artResourceCount*2-1].onerror();
 assert.equal(artGame.getState().assetsError, true);
 assert.equal(artGame.start(), false);
 artGame.retryAssets();
-requestedImages[6].load();requestedImages[7].load();requestedImages[8].load();
+for(const image of requestedImages.slice(artResourceCount*2))image.load();
 assert.equal(artGame.getState().assetsReady, true);
 assert.equal(artGame.getState().assetsError, false);
 // Both layers share a world origin, but only the cannon receives the aim rotation.
@@ -231,6 +230,21 @@ for(const aim of [0,Math.PI/2,Math.PI,-Math.PI/2]) {
   assert.equal(playerDraws.length,2);
   assert.equal(playerDraws[0].angle,0,'Aiming cannot rotate the chassis');
   assert.equal(playerDraws[1].angle,aim,'The cannon follows aim in every direction');
+}
+for(const [type,wave] of [['runner',1],['gunner',1],['brute',1],['charger',1],['splitter',1],['sniper',1],['elite',3],['boss',5],['boss',10]]) {
+  artTest.state.wave=wave;
+  const unit=artTest.spawnEnemy(type,{x:640,y:360});
+  for(const aim of [0,Math.PI/2,Math.PI,-Math.PI/2]) {
+    playerDraws.length=0;playerRotation=0;unit.telegraph=0;unit.recovery=0;
+    artTest.state.player.x=640+Math.cos(aim)*100;artTest.state.player.y=360+Math.sin(aim)*100;
+    artTest.drawEnemy(unit);
+    assert.equal(playerDraws.length,2,`${type} has separate body and cannon`);
+    assert.equal(playerDraws[0].angle,0,`${type} body never turns to aim`);
+    assert.ok(Math.abs(Math.atan2(Math.sin(playerDraws[1].angle-aim),Math.cos(playerDraws[1].angle-aim)))<1e-8);
+  }
+  unit.telegraph=.8;unit.attackAngle=-Math.PI/4;
+  playerDraws.length=0;playerRotation=0;artTest.drawEnemy(unit);
+  assert.equal(playerDraws[1].angle,unit.attackAngle,`${type} cannon matches its locked attack warning`);
 }
 delete ctx.rotate;delete ctx.drawImage;
 artGame.destroy();
@@ -279,4 +293,13 @@ for(const [wave,px,py,ex,ey,type] of [[1,830,180,1001,350,'runner'],[1,1080,300,
   assert.ok(reached,`Wave ${wave} pursuer must navigate around cover to ${px},${py}`);
 }
 console.log('PASS navigation: five previously stuck pursuit routes across all arena layouts.');
+game.start();s.cover=[{x:680,y:280,w:12,h:160}];s.player.x=720;s.player.y=360;s.player.invulnerable=0;
+const shooter=t.spawnEnemy('sniper',{x:640,y:360});t.fireEnemyBullet(shooter,0,550);
+assert.ok(s.enemyBullets[0].x>692,'Sniper bullet starts at the separate cannon muzzle');
+const protectedHealth=s.player.health;t.updateEnemyBullets(.03);
+assert.equal(s.player.health,protectedHealth,'Long cannons cannot shoot through adjacent cover');
+assert.equal(s.enemyBullets.length,0);
+s.cover=[];s.player.x=655;t.fireEnemyBullet(shooter,0,550);t.updateEnemyBullets(.03);
+assert.ok(s.player.health<protectedHealth,'Targets underneath a long cannon can still be hit');
+console.log('PASS enemy layers: fixed bodies, rotating cannons, locked telegraphs, muzzle spawns and cover-safe close-range shots.');
 
