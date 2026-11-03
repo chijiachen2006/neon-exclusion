@@ -1,4 +1,4 @@
-import { mountGame } from './game.js?v=3.3';
+import { mountGame } from './game.js?v=3.4';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('gameCanvas');

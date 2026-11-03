@@ -15,7 +15,7 @@ const env = { HTMLCanvasElement: Canvas, Math: math, console, performance: { now
 let source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8').replace('export function mountGame', 'function mountGame');
 source = source.replace('  state.player=playerFresh();', `  globalThis.test = { state, update, beginWave, completeWave, spawnEnemy, damageEnemy, fireBullet,
     projectile, bulletImpact, updateBullets, updatePickups, updateBoss, updateWorld, updateEnemyBullets,
-    coverHit, resolveCover, offerChoice, openNextChoice, hurtPlayer, aimTouchWeapon, updateEnemies, draw, UPGRADES, wavePlan };\n  state.player=playerFresh();`);
+    coverHit, resolveCover, offerChoice, openNextChoice, hurtPlayer, aimTouchWeapon, updateEnemies, draw, drawPlayer, UPGRADES, wavePlan };\n  state.player=playerFresh();`);
 vm.createContext(env); vm.runInContext(source + '\nglobalThis.mountGame = mountGame;', env);
 const game = env.mountGame(new Canvas(), { onEvent: (event) => events.push(event) }), t = env.test, s = t.state;
 assert.equal(Object.keys(t.UPGRADES).length, 16);
@@ -195,6 +195,8 @@ assert.equal(artGame.start(), false, 'Gameplay waits for both art resources');
 requestedImages[0].load();
 assert.equal(artGame.getState().assetsReady, false);
 requestedImages[1].load();
+assert.equal(artGame.getState().assetsReady, false, 'The separate rover layers must also be ready');
+requestedImages[2].load();
 assert.equal(artGame.getState().assetsReady, true);
 artGame.start();
 const artTest = artEnvironment.test;
@@ -212,13 +214,25 @@ artTest.draw();
 artGame.retryAssets();
 requestedImages[0].onload();
 assert.equal(artGame.getState().assetsReady, false, 'Previous loading callbacks cannot complete a retry');
-requestedImages[3].onerror();
+requestedImages[5].onerror();
 assert.equal(artGame.getState().assetsError, true);
 assert.equal(artGame.start(), false);
 artGame.retryAssets();
-requestedImages[4].load();requestedImages[5].load();
+requestedImages[6].load();requestedImages[7].load();requestedImages[8].load();
 assert.equal(artGame.getState().assetsReady, true);
 assert.equal(artGame.getState().assetsError, false);
+// Both layers share a world origin, but only the cannon receives the aim rotation.
+const playerDraws=[]; let playerRotation=0;
+ctx.rotate=(angle)=>{playerRotation+=angle;};
+ctx.drawImage=(...args)=>playerDraws.push({sourceX:args[1],angle:playerRotation});
+for(const aim of [0,Math.PI/2,Math.PI,-Math.PI/2]) {
+  playerDraws.length=0;playerRotation=0;
+  artTest.state.player.angle=aim;artTest.drawPlayer(artTest.state.player,0);
+  assert.equal(playerDraws.length,2);
+  assert.equal(playerDraws[0].angle,0,'Aiming cannot rotate the chassis');
+  assert.equal(playerDraws[1].angle,aim,'The cannon follows aim in every direction');
+}
+delete ctx.rotate;delete ctx.drawImage;
 artGame.destroy();
 console.log('PASS art: loading gate, stale callbacks, failure/retry, rendered terrain collision and accessible enemy entries.');
 

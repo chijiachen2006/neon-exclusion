@@ -71,8 +71,9 @@ function wavePlan(wave, endless) {
     mission: !boss && wave % 3 === 0 ? (wave % 2 ? 'bounty' : 'cache') : null };
 }
 const ART_SOURCES = {
-  floor: './assets/arena-ice.png?v=3.3',
-  units: './assets/units-ice.png?v=3.3',
+  floor: './assets/arena-ice.png?v=3.4',
+  units: './assets/units-ice.png?v=3.4',
+  rover: './assets/rover-layered.png?v=3.4',
 };
 // Source rectangles include a small transparent margin around each rendered object.
 const ART_FRAMES = {
@@ -122,7 +123,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   let raf = 0;
   let lastTime = 0;
   let drawScale = 1;
-  const art = { ready: typeof Image === 'undefined', error: false, floor: null, units: null };
+  const art = { ready: typeof Image === 'undefined', error: false, floor: null, units: null, rover: null };
   let artBatch = 0;
   let drawOffsetX = 0;
   let drawOffsetY = 0;
@@ -179,7 +180,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       art[key] = resource;
       resource.onload = () => {
         if (disposed || batch !== artBatch) return;
-        art.ready = ['floor', 'units'].every((id) => art[id]?.complete && art[id].naturalWidth > 0);
+        art.ready = Object.keys(ART_SOURCES).every((id) => art[id]?.complete && art[id].naturalWidth > 0);
         emitState();
       };
       resource.onerror = () => {
@@ -1429,7 +1430,17 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
 
   function drawPlayer(p, time) {
     const blink = p.invulnerable > 0 && !reducedMotion?.matches && Math.floor(time * 17) % 2 === 0;
-    drawUnitSprite('player', p.x, p.y, p.angle, 83, blink ? .7 : 1);
+    if (art.rover?.complete && art.rover.naturalWidth > 0) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.globalAlpha = blink ? .7 : 1;
+      // The chassis mount (530, 367) and turret pivot (1190, 423) share the player origin.
+      // Chassis orientation stays fixed; aim rotates only the separate turret/barrel layer.
+      ctx.drawImage(art.rover, 120, 180, 630, 530, -41, -18.7, 63, 53);
+      ctx.rotate(p.angle);
+      ctx.drawImage(art.rover, 1020, 315, 660, 215, -17, -10.8, 66, 21.5);
+      ctx.restore();
+    }
     if (p.reload > 0) {
       ctx.strokeStyle = '#a6ddff';
       ctx.lineWidth = 1.5;
