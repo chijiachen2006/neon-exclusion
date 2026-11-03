@@ -47,6 +47,8 @@ button:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
 .icon-button { width: 32px; height: 32px; padding: 6px; background: transparent; border: 0; border-radius: 4px; color: var(--muted); }
 .icon-button:hover { color: var(--primary); background: var(--surface-hi); }
 .icon-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mute-slash { display: none; }
+.is-muted .mute-slash { display: block; }
 .version { font-size: 10px; color: var(--subtle); }
 .masthead { position: relative; z-index: 2; }
 .game-main { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; background: oklch(0.3 0.03 252); }
@@ -151,6 +153,14 @@ kbd { display: inline-grid; place-items: center; min-width: 17px; height: 19px; 
 .victory-symbol { font-size: 30px; margin-bottom: 12px; color: var(--primary); }
 .victory-score { margin-top: 15px; }
 .modal-panel .run-info { font-size: 10px; }
+.owned-build { margin-top: 18px; text-align: left; font-size: 12px; }
+.owned-build summary { cursor: pointer; min-height: 44px; padding-block: 13px; }
+.owned-build ul { max-height: 145px; overflow-y: auto; margin: 0; padding: 0 5px 0 19px; line-height: 1.7; color: var(--muted); }
+.owned-build li + li { margin-top: 8px; }
+.restart-confirm { font-size: 12px; line-height: 1.6; }
+.restart-confirm-actions { display: flex; gap: 8px; }
+.restart-confirm-actions > button { flex: 1; min-height: 44px; }
+.danger-button { color: var(--danger); }
 .upgrade-panel { width: min(900px, 100%); max-height: 100%; padding: 26px; background: var(--surface); border-radius: 8px; text-align: center; overflow: auto; }
 .upgrade-panel h2 { margin: 0; font-size: 28px; letter-spacing: -.02em; }
 .upgrade-subtitle { margin: 10px 0 23px; color: var(--muted); font-size: 12px; }
@@ -350,11 +360,30 @@ html.touch-device .touch-controls:not([hidden]) { display: block; position: fixe
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
+@media (pointer: coarse) {
+  .icon-button { width: 44px; height: 44px; padding: 12px; flex-shrink: 0; }
+  .touch-reload { min-width: 44px; min-height: 44px; }
+  .primary-button, .secondary-button, .upgrade-actions .secondary-button { min-height: 44px; }
+}
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  .masthead { height: 48px; flex-basis: 48px; }
+  .game-stage { width: min(100%, calc((100dvh - 94px) * 16 / 9)); }
+  .modal-overlay, .upgrade-overlay { inset-block-start: 48px; }
+  .owned-build { margin-top: 8px; }
+  .owned-build ul { max-height: 90px; }
+}
+@media (max-width: 360px) {
+  .brand-mark { display: none; }
+  .brand-copy strong { font-size: 10px; }
+  .masthead { padding-inline: 8px; gap: 4px; }
+  .header-score { font-size: 11px; }
+}
+
 /* The menu displays the same rendered armored vehicle used in combat. */
 .vehicle-portrait {
   width: 100%;
   aspect-ratio: 3 / 2;
-  background-image: url('./assets/rover-hero.png?v=3.2');
+  background-image: url('./assets/rover-hero.png?v=3.3');
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;

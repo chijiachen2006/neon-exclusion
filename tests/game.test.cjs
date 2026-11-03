@@ -15,7 +15,7 @@ const env = { HTMLCanvasElement: Canvas, Math: math, console, performance: { now
 let source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8').replace('export function mountGame', 'function mountGame');
 source = source.replace('  state.player=playerFresh();', `  globalThis.test = { state, update, beginWave, completeWave, spawnEnemy, damageEnemy, fireBullet,
     projectile, bulletImpact, updateBullets, updatePickups, updateBoss, updateWorld, updateEnemyBullets,
-    coverHit, resolveCover, offerChoice, openNextChoice, hurtPlayer, draw, UPGRADES, wavePlan };\n  state.player=playerFresh();`);
+    coverHit, resolveCover, offerChoice, openNextChoice, hurtPlayer, aimTouchWeapon, updateEnemies, draw, UPGRADES, wavePlan };\n  state.player=playerFresh();`);
 vm.createContext(env); vm.runInContext(source + '\nglobalThis.mountGame = mountGame;', env);
 const game = env.mountGame(new Canvas(), { onEvent: (event) => events.push(event) }), t = env.test, s = t.state;
 assert.equal(Object.keys(t.UPGRADES).length, 16);
@@ -221,4 +221,48 @@ assert.equal(artGame.getState().assetsReady, true);
 assert.equal(artGame.getState().assetsError, false);
 artGame.destroy();
 console.log('PASS art: loading gate, stale callbacks, failure/retry, rendered terrain collision and accessible enemy entries.');
+
+// Player-facing regressions: close combat, cover ordering, targeting and safe handoff.
+game.start(); s.cover=[]; s.player.x=640;s.player.y=360;s.player.angle=0;
+const closeTarget=enemy(655,360); t.fireBullet();t.updateBullets(.016);
+assert.ok(closeTarget.hp<1000,'A target under the muzzle must still be hit');
+game.start();s.cover=[{x:675,y:300,w:12,h:120}];s.player.x=640;s.player.y=360;s.player.angle=0;
+const behindMuzzleWall=enemy(725,360);t.fireBullet();t.updateBullets(.08);
+assert.equal(behindMuzzleWall.hp,1000,'Muzzle offset cannot shoot through adjacent cover');
+game.start();s.cover=[{x:300,y:280,w:20,h:100}];
+const beforeCover=enemy(250,320),afterCover=enemy(350,320);
+s.player.upgrades.pierce=3;t.projectile(200,320,0,20);t.updateBullets(.2);
+assert.equal(beforeCover.hp,980,'Hit enemies before the first obstacle');
+assert.equal(afterCover.hp,1000,'Cover still blocks enemies behind it');
+const homingTurn=(side)=>{game.start();s.cover=[];s.player.upgrades.homing=2;s.player.evolutions=['frost'];
+  enemy(600,360+side*200);const b=t.projectile(600,360,0,10);t.updateBullets(.02);return Math.atan2(b.vy,b.vx);};
+assert.ok(Math.abs(homingTurn(1)+homingTurn(-1))<1e-8,'Evolution homing turns equally left and right');
+game.start();s.cover=[];s.player.x=640;s.player.y=360;
+enemy(1000,360);t.aimTouchWeapon(s.player);enemy(640,420);t.aimTouchWeapon(s.player);
+assert.ok(Math.abs(s.player.angle-Math.PI/2)<.01,'Mobile autoaim reacts to a closer threat');
+game.start();s.cover=[{x:710,y:300,w:20,h:150}];s.player.x=640;s.player.y=360;
+s.time=0;s.player.upgrades.drone=1;enemy(780,360);const visibleDroneTarget=enemy(640,620);t.updateWorld(.01);
+assert.equal(s.bullets.length,1);assert.ok(s.bullets[0].vy>0,'Drone chooses visible enemies over blocked ones');
+game.start();s.player.invulnerable=0;game.pause();game.resume();
+assert.ok(s.player.invulnerable>=.8,'Pause resume leaves time to reacquire controls');
+s.player.invulnerable=0;t.offerChoice();game.skipChoice();
+assert.ok(s.player.invulnerable>=.8,'Upgrade handoff leaves time to reacquire controls');
+game.start();for(const id of Object.keys(t.UPGRADES))s.player.upgrades[id]=t.UPGRADES[id].max;
+s.player.upgrades.heavy=0;s.player.upgrades.pierce=0;t.offerChoice();
+assert.equal(game.getState().canReroll,false,'Reroll is unavailable without alternative upgrades');
+assert.equal(game.rerollChoices(),false);assert.equal(game.getState().rerolls,2);
+console.log('PASS usability: point-blank hits, cover ordering, symmetric homing, mobile retargeting, drone visibility, resume protection and honest reroll state.');
+for(const [wave,px,py,ex,ey,type] of [[1,830,180,1001,350,'runner'],[1,1080,300,958,492,'brute'],
+  [2,640,360,472,192,'brute'],[2,180,450,438,192,'brute'],[3,420,550,723,247,'brute']]) {
+  game.start();s.wave=wave-1;t.beginWave();s.spawnsLeft=0;s.enemies=[];
+  s.player.x=px;s.player.y=py;s.player.invulnerable=9999;
+  const pursuer=t.spawnEnemy(type,{x:ex,y:ey});t.resolveCover(pursuer);
+  let reached=false;
+  for(let frame=0;frame<2400;frame++) {
+    t.updateEnemies(1/60);
+    if(Math.hypot(pursuer.x-px,pursuer.y-py)<pursuer.r+s.player.r+8){reached=true;break;}
+  }
+  assert.ok(reached,`Wave ${wave} pursuer must navigate around cover to ${px},${py}`);
+}
+console.log('PASS navigation: five previously stuck pursuit routes across all arena layouts.');
 

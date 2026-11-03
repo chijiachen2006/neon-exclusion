@@ -7,10 +7,10 @@
     <meta name="description" content="霓虹禁区：一款可直接在浏览器游玩的俯视角射击游戏。" />
     <title>霓虹禁区 · NEON EXCLUSION</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23f5f8fd' d='M0 0h32v32H0z'/%3E%3Cpath fill='none' stroke='%23256adc' stroke-width='2' d='m16 3 13 13-13 13L3 16Z'/%3E%3Cpath fill='%2358b9f4' d='m16 11 5 5-5 5-5-5Z'/%3E%3C/svg%3E" />
-    <link rel="preload" as="image" href="./assets/arena-ice.png?v=3.2" />
-    <link rel="preload" as="image" href="./assets/units-ice.png?v=3.2" />
-    <link rel="stylesheet" href="./styles.css?v=3.2" />
-    <script type="module" src="./main.js?v=3.2"></script>
+    <link rel="preload" as="image" href="./assets/arena-ice.png?v=3.3" />
+    <link rel="preload" as="image" href="./assets/units-ice.png?v=3.3" />
+    <link rel="stylesheet" href="./styles.css?v=3.3" />
+    <script type="module" src="./main.js?v=3.3"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -22,7 +22,7 @@
         <div class="masthead-meta"><div class="mission-hud" id="missionHud" hidden><span id="hudMode">1 / 10</span><strong id="missionText"></strong><div class="mission-dots" id="missionDots" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div></div>
         <div class="top-actions"><span class="sr-only" id="hudWave">01</span><strong class="header-score" id="hudScore" aria-label="作战分数">000000</strong>
           <button type="button" class="icon-button" id="muteBtn" aria-label="切换音效" title="切换音效">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.4-.4a5 5 0 0 1 0 6.8M19 6a9 9 0 0 1 0 12" /></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm12.4-.4a5 5 0 0 1 0 6.8M19 6a9 9 0 0 1 0 12" /><path class="mute-slash" d="m3 3 18 18" /></svg>
           </button>
           <button type="button" class="icon-button" id="pauseBtn" aria-label="暂停游戏" title="暂停游戏">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg>
@@ -92,7 +92,7 @@
             <div class="modal-panel"><p class="modal-kicker">EXCLUSION LIFTED</p><div class="victory-symbol" aria-hidden="true">✦</div><h2 id="victoryTitle">封锁已突破</h2><p>全部 10 波完成，无尽模式已解锁。带上当前构筑，挑战更深的禁区。</p><div class="victory-score" id="victoryScore">0</div><p class="run-info" id="victoryInfo"></p><div class="modal-actions"><button type="button" class="primary-button" id="continueEndlessBtn">带着当前构筑继续无尽</button><button type="button" class="secondary-button" id="victoryRestartBtn">重新挑战 10 波</button></div></div>
           </section>
           <section class="game-overlay modal-overlay" id="pauseScreen" aria-labelledby="pauseTitle" hidden>
-            <div class="modal-panel"><p class="modal-kicker">PROTOCOL SUSPENDED</p><h2 id="pauseTitle">作战暂停</h2><p>呼吸。瞄准。继续守住阵地。</p><div class="modal-actions"><button type="button" class="primary-button" id="resumeBtn"><span>继续作战</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg></button><button type="button" class="secondary-button" id="pauseRestartBtn">重新开始</button></div><small>按 ESC 继续</small></div>
+            <div class="modal-panel"><p class="modal-kicker">PROTOCOL SUSPENDED</p><h2 id="pauseTitle">作战暂停</h2><p>继续后有短暂保护，准备好再出发。</p><div class="modal-actions"><button type="button" class="primary-button" id="resumeBtn"><span>继续作战</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6" /></svg></button><button type="button" class="secondary-button" id="pauseRestartBtn">重新开始</button></div><div id="restartConfirm" class="restart-confirm" hidden><p>重新开始会清空本局进度。</p><div class="restart-confirm-actions"><button type="button" class="secondary-button" id="cancelRestartBtn">保留本局</button><button type="button" class="secondary-button danger-button" id="confirmRestartBtn">确认重新开始</button></div></div><details id="ownedBuild" class="owned-build"><summary>查看本局强化</summary><ul id="ownedBuildList"></ul></details><small>按 ESC 继续</small></div>
           </section>
 
           <section class="game-overlay modal-overlay over-screen" id="gameOverScreen" aria-labelledby="overTitle" hidden>
@@ -102,7 +102,7 @@
         <footer class="game-footer">
           <div class="footer-controls"><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 移动　鼠标 射击　<kbd>R</kbd> 换弹</p><small><span id="hudRemaining">敌人 0</span> · <span id="statusText">准备作战</span> · 最佳 <span id="hudBest">000000</span></small></div>
           <div class="build-tray"><div class="active-buffs" id="activeBuffs" aria-label="本局武器强化" hidden></div><span class="build-empty" id="buildEmpty">拾取强化核心，组建你的武器流派</span></div>
-          <div class="footer-status"><div class="dash-meter" id="desktopDash" aria-label="闪避冷却"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3-8 10h6l-1 8 9-11h-6l1-7Z"/></svg></div><kbd>SPACE</kbd><strong id="hudReload">闪避已就绪</strong><span class="version">v3.2</span></div>
+          <div class="footer-status"><div class="dash-meter" id="desktopDash" aria-label="闪避冷却"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 3-8 10h6l-1 8 9-11h-6l1-7Z"/></svg></div><kbd>SPACE</kbd><strong id="hudReload">闪避已就绪</strong><span class="version">v3.3</span></div>
         </footer>
       </main>
     </div>

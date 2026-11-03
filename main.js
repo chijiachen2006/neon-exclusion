@@ -1,4 +1,4 @@
-import { mountGame } from './game.js?v=3.2';
+import { mountGame } from './game.js?v=3.3';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('gameCanvas');
@@ -157,8 +157,8 @@ function render(state) {
     });
     $('upgradeChoices').replaceChildren(...cards);
   }
-  $('rerollBtn').textContent = `重抽 · 剩余 ${state.rerolls} 次`;
-  $('rerollBtn').disabled = state.rerolls <= 0;
+  $('rerollBtn').textContent = state.rerolls > 0 && !state.canReroll && state.phase === 'choosing' ? '已无其他可选强化' : `重抽 · 剩余 ${state.rerolls} 次`;
+  $('rerollBtn').disabled = !state.canReroll;
   const routes = state.routes.filter((r) => r.invested > 0).slice(0, 3).map((r) => {
     const item = document.createElement('span'); item.className = r.active ? 'route-active' : '';
     item.textContent = r.active ? `✦ ${r.name} · 已进化` : `${r.name} ${r.invested}/${r.total} · ${r.missing}`;
@@ -176,6 +176,7 @@ function render(state) {
   $('muteBtn').setAttribute('aria-pressed', String(state.muted));
   $('muteBtn').setAttribute('aria-label', state.muted ? '开启音效' : '关闭音效');
   $('muteBtn').title = state.muted ? '开启音效' : '关闭音效';
+  $('muteBtn').classList.toggle('is-muted', state.muted);
   $('startEndlessBtn').hidden = !state.endlessUnlocked;
   $('touchControls').hidden = state.phase !== 'playing';
   $('fireBtn').disabled = state.phase !== 'playing';
@@ -194,6 +195,17 @@ function render(state) {
     $('victoryInfo').textContent = `用时 ${timeText(state.elapsed)} · 击败 ${state.kills} 个敌人 · ${state.bossesKilled} 位首领`;
   }
   if (state.phase !== lastPhase) {
+    $('restartConfirm').hidden = true;
+    $('pauseRestartBtn').hidden = false;
+    if (state.phase === 'paused') {
+      const items = [...state.upgradeList.map((u) => `${u.name} Lv.${u.level}：${u.description}`),
+        ...state.evolutions.map((u) => `${u.name}：${u.description}`)].map((text) => {
+          const item = document.createElement('li'); item.textContent = text; return item;
+        });
+      if (!items.length) { const item = document.createElement('li'); item.textContent = '尚未获得强化，击败敌人拾取核心即可选择。'; items.push(item); }
+      $('ownedBuildList').replaceChildren(...items);
+      $('ownedBuild').open = false;
+    }
     if (state.phase !== 'playing') resetTouchUI();
     lastPhase = state.phase;
     const focusTarget = state.phase === 'choosing' ? $('upgradeChoices').firstElementChild :
@@ -232,7 +244,15 @@ $('resumeBtn').addEventListener('click', () => game.resume());
 $('restartBtn').addEventListener('click', () => game.restart());
 $('victoryRestartBtn').addEventListener('click', () => game.restart());
 $('continueEndlessBtn').addEventListener('click', () => game.continueEndless());
-$('pauseRestartBtn').addEventListener('click', () => game.restart());
+$('pauseRestartBtn').addEventListener('click', () => {
+  $('restartConfirm').hidden = false; $('pauseRestartBtn').hidden = true;
+  $('cancelRestartBtn').focus({ preventScroll: true });
+});
+$('confirmRestartBtn').addEventListener('click', () => game.restart());
+$('cancelRestartBtn').addEventListener('click', () => {
+  $('restartConfirm').hidden = true; $('pauseRestartBtn').hidden = false;
+  $('pauseRestartBtn').focus({ preventScroll: true });
+});
 $('pauseBtn').addEventListener('click', () => game.togglePause());
 $('muteBtn').addEventListener('click', () => game.toggleMute());
 const moveStick = $('moveStick'), fireButton = $('fireBtn');

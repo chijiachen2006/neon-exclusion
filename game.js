@@ -71,8 +71,8 @@ function wavePlan(wave, endless) {
     mission: !boss && wave % 3 === 0 ? (wave % 2 ? 'bounty' : 'cache') : null };
 }
 const ART_SOURCES = {
-  floor: './assets/arena-ice.png?v=3.2',
-  units: './assets/units-ice.png?v=3.2',
+  floor: './assets/arena-ice.png?v=3.3',
+  units: './assets/units-ice.png?v=3.3',
 };
 // Source rectangles include a small transparent margin around each rendered object.
 const ART_FRAMES = {
@@ -112,6 +112,7 @@ const segmentDistanceSquared = (ax, ay, bx, by, px, py) => {
 };
 
 export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {}) {
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
   if (!(canvas instanceof HTMLCanvasElement)) throw new Error('mountGame requires a canvas element');
   const ctx = canvas.getContext('2d', { alpha: false });
   // Move keyboard focus away from start/pause buttons when play resumes.
@@ -273,10 +274,10 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     if (virtualAim) { touchTarget = null; player.angle = Math.atan2(virtualAim.y, virtualAim.x); return; }
     const visible = (enemy) => enemy.hp > 0 && enemy.x >= 0 && enemy.x <= W && enemy.y >= 90 && enemy.y <= H &&
       !coverHit(player.x, player.y, enemy.x, enemy.y, 1);
-    if (!touchTarget || !state.enemies.includes(touchTarget) || !visible(touchTarget)) {
-      touchTarget = state.enemies.filter(visible)
-        .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0] || null;
-    }
+    const distance = (enemy) => Math.hypot(enemy.x - player.x, enemy.y - player.y);
+    const nearest = state.enemies.filter(visible).sort((a, b) => distance(a) - distance(b))[0] || null;
+    if (!touchTarget || !state.enemies.includes(touchTarget) || !visible(touchTarget) ||
+      (nearest && distance(nearest) < distance(touchTarget) * .72)) touchTarget = nearest;
     if (touchTarget) player.angle = Math.atan2(touchTarget.y - player.y, touchTarget.x - player.x);
   }
 
@@ -319,7 +320,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
       endlessUnlocked: state.endlessUnlocked, elapsed: Math.floor(state.time), bossesKilled: state.bossesKilled,
       boss: boss ? { name: boss.name, health: Math.max(0, boss.hp), maxHealth: boss.maxHp, phase: boss.enraged ? 2 : 1,
         hint: bossHint(boss), parts: state.enemies.filter((e) => e.parent === boss).length } : null,
-      rerolls: state.rerolls, routes: recipeProgress(), sideMission: missionSnapshot(),
+      rerolls: state.rerolls, canReroll: canReroll(), routes: recipeProgress(), sideMission: missionSnapshot(),
       waveName: state.plan.name, breakSeconds: Math.ceil(state.waveBreak),
       objective: state.waveCleared ? `补给休整 ${Math.ceil(state.waveBreak)} 秒 · 下一波 ${wavePlan(state.wave + 1, true).name}` :
         `${state.plan.name} · ${state.plan.boss ? 'Boss 战' : `距 Boss ${Math.max(0, nextBoss - state.wave)} 波`}`,
@@ -377,7 +378,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   function openNextChoice() {
     if (!state.choiceQueue.length) {
       state.choices = []; phase = state.afterChoices;
-      if (phase === 'playing') canvas.focus({ preventScroll: true });
+      if (phase === 'playing') { state.player.invulnerable = Math.max(state.player.invulnerable, .9); canvas.focus({ preventScroll: true }); }
       emitState(); return;
     }
     state.choiceRare = state.choiceQueue.shift();
@@ -390,8 +391,14 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     phase = 'choosing'; clearInputs(); emitState();
   }
 
+  function canReroll() {
+    const u = state.player.upgrades;
+    return phase === 'choosing' && state.rerolls > 0 && Object.keys(UPGRADES).some((id) =>
+      u[id] < UPGRADES[id].max && !u[UPGRADES[id].excludes] && !state.choices.some((c) => c.id === id));
+  }
+
   function rerollChoices() {
-    if (phase !== 'choosing' || state.rerolls <= 0) return false;
+    if (!canReroll()) return false;
     const old = state.choices.map((c) => c.id);
     const options = generateChoices(state.choiceRare, old);
     if (!options.some((c) => !old.includes(c.id))) return false;
@@ -589,6 +596,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   function resume() {
     if (phase !== 'paused') return;
     phase = 'playing';
+    state.player.invulnerable = Math.max(state.player.invulnerable, .9);
     canvas.focus({ preventScroll: true });
     lastTime = performance.now();
     emitState();
@@ -599,6 +607,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   function toggleMute() { muted = !muted; if (!muted) unlockAudio(); emitState(); return muted; }
 
   function onKeyDown(e) {
+    if (['Space','Enter'].includes(e.code) && e.target?.closest?.('button,summary,input,textarea,select,a')) return;
     virtualTouchMode = false;
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     if (phase === 'choosing' && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) {
@@ -736,7 +745,9 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     const spread = rand(-.02, .02), damage = 28 * (1 + u.heavy * .18) / (1 + u.multi * .25) * (u.overload ? 1.7 : 1) * (u.accelerator ? .84 : 1);
     for (let shot = -u.multi; shot <= u.multi; shot++) {
       const angle = p.angle + spread + shot * .14;
-      projectile(p.x + Math.cos(angle) * 49, p.y + Math.sin(angle) * 49, angle, damage);
+      const bullet = projectile(p.x + Math.cos(angle) * 49, p.y + Math.sin(angle) * 49, angle, damage);
+      // Trace the barrel as well as the flight on the first frame.
+      bullet.origin = { x: p.x, y: p.y };
     }
     burst(p.x + Math.cos(p.angle) * 52, p.y + Math.sin(p.angle) * 52, '#ffe6a4', 4, 85, 2.5);
     state.shake = Math.max(state.shake, 1.5); sound('shoot');
@@ -859,7 +870,68 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     return nearest;
   }
 
+  let navigationCover = null;
+  const navigationGraphs = new Map();
+  function navigationPath(enemy) {
+    // Reuse cover-corner visibility graphs per body size; only endpoints move.
+    if (navigationCover !== state.cover) { navigationCover = state.cover; navigationGraphs.clear(); }
+    const radius = enemy.r + 2;
+    let graph = navigationGraphs.get(radius);
+    const clear = (a,b) => !coverHit(a.x,a.y,b.x,b.y,radius);
+    if (!graph) {
+      const nodes = state.cover.flatMap((rect) => {
+        const margin = radius + 3;
+        return [[rect.x-margin,rect.y-margin],[rect.x+rect.w+margin,rect.y-margin],
+          [rect.x-margin,rect.y+rect.h+margin],[rect.x+rect.w+margin,rect.y+rect.h+margin]]
+          .map(([x,y])=>({x,y}));
+      }).filter((node)=>node.x>=24 && node.x<=W-24 && node.y>=100 && node.y<=H-24 && clear(node,node));
+      const edges=nodes.map(()=>[]);
+      for(let i=0;i<nodes.length;i++)for(let j=0;j<i;j++)if(clear(nodes[i],nodes[j])) {
+        const cost=Math.hypot(nodes[i].x-nodes[j].x,nodes[i].y-nodes[j].y);
+        edges[i].push([j,cost]);edges[j].push([i,cost]);
+      }
+      graph={nodes,edges};navigationGraphs.set(radius,graph);
+    }
+    const anchor=(point)=> {
+      if(clear(point,point))return {x:point.x,y:point.y};
+      const candidates=state.cover.flatMap((rect)=>[
+        {x:rect.x-radius-3,y:point.y},{x:rect.x+rect.w+radius+3,y:point.y},
+        {x:point.x,y:rect.y-radius-3},{x:point.x,y:rect.y+rect.h+radius+3},
+      ]).concat(graph.nodes).filter((node)=>node.x>=24 && node.x<=W-24 && node.y>=100 && node.y<=H-24 && clear(node,node));
+      return candidates.sort((a,b)=>Math.hypot(a.x-point.x,a.y-point.y)-Math.hypot(b.x-point.x,b.y-point.y))[0] || point;
+    };
+    const goal=anchor(state.player), origin=anchor(enemy);
+    const nodes=[...graph.nodes,origin,goal], start=nodes.length-2, end=nodes.length-1;
+    const edges=graph.edges.map((edge)=>[...edge]);edges.push([],[]);
+    for(const index of [start,end])for(let i=0;i<index;i++)if(clear(nodes[index],nodes[i])) {
+      const cost=Math.hypot(nodes[index].x-nodes[i].x,nodes[index].y-nodes[i].y);
+      edges[index].push([i,cost]);edges[i].push([index,cost]);
+    }
+    const costs=nodes.map(()=>Infinity),previous=[],visited=new Set();costs[start]=0;
+    while(visited.size<nodes.length) {
+      let current=-1;
+      for(let i=0;i<nodes.length;i++)if(!visited.has(i) && (current<0 || costs[i]<costs[current]))current=i;
+      if(current<0 || !Number.isFinite(costs[current]) || current===end)break;
+      visited.add(current);
+      for(const [next,cost] of edges[current])if(costs[current]+cost<costs[next]){costs[next]=costs[current]+cost;previous[next]=current;}
+    }
+    if(!Number.isFinite(costs[end]))return [];
+    const route=[];let current=end;
+    while(current!==start){route.unshift({x:nodes[current].x,y:nodes[current].y});current=previous[current];}
+    if(Math.hypot(origin.x-enemy.x,origin.y-enemy.y)>1)route.unshift({x:origin.x,y:origin.y});
+    return route;
+  }
+
   function moveEnemy(enemy, vx, vy, dt) {
+    const p=state.player;
+    const approaching=vx*(p.x-enemy.x)+vy*(p.y-enemy.y)>0;
+    enemy.navTimer=Math.max(0,(enemy.navTimer||0)-dt);
+    if(approaching && !(enemy.dashTime>0) && coverHit(enemy.x,enemy.y,p.x,p.y,enemy.r+2)) {
+      if(!enemy.navTimer || !enemy.navPath){enemy.navPath=navigationPath(enemy);enemy.navTimer=.65;}
+      while(enemy.navPath.length && Math.hypot(enemy.navPath[0].x-enemy.x,enemy.navPath[0].y-enemy.y)<9)enemy.navPath.shift();
+      const waypoint=enemy.navPath[0];
+      if(waypoint){const dx=waypoint.x-enemy.x,dy=waypoint.y-enemy.y,d=Math.hypot(dx,dy)||1,speed=Math.hypot(vx,vy);vx=dx/d*speed;vy=dy/d*speed;}
+    } else enemy.navPath=null;
     const slow = enemy.slowTimer > 0 ? enemy.slowFactor : 1;
     enemy.x += vx * dt * slow; enemy.y += vy * dt * slow;
     if (resolveCover(enemy)) {
@@ -965,8 +1037,10 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
         for (let i = 0; i < count; i++) {
           const x = p.x + Math.cos(state.time * 1.8 + i * Math.PI) * 48;
           const y = p.y + Math.sin(state.time * 1.8 + i * Math.PI) * 48;
-          const target = [...state.enemies].sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
-          projectile(x, y, Math.atan2(target.y - y, target.x - x), 14 + p.upgrades.drone * 6, { drone: true });
+          if (coverHit(p.x, p.y, x, y, 3.3)) continue;
+          const target = state.enemies.filter((e) => e.hp > 0 && !coverHit(x, y, e.x, e.y, 3.3))
+            .sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+          if (target) projectile(x, y, Math.atan2(target.y - y, target.x - x), 14 + p.upgrades.drone * 6, { drone: true });
         }
         p.droneTimer = .9 / (1 + p.upgrades.drone * .3) * (p.evolutions.includes('swarm') ? .75 : 1);
       }
@@ -1085,44 +1159,60 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
 
   function updateBullets(dt) {
     for (let i = state.bullets.length - 1; i >= 0; i--) {
-      const b = state.bullets[i], oldX = b.x, oldY = b.y;
+      const b = state.bullets[i], oldX = b.origin?.x ?? b.x, oldY = b.origin?.y ?? b.y;
+      b.origin = null;
       if (!b.drone && state.player.upgrades.homing && state.enemies.length) {
-        const target = state.enemies.filter((e) => !b.hitEnemies.has(e))
+        const target = state.enemies.filter((e) => e.hp > 0 && !b.hitEnemies.has(e) && !coverHit(b.x, b.y, e.x, e.y, b.r))
           .sort((a, e) => Math.hypot(a.x - b.x, a.y - b.y) - Math.hypot(e.x - b.x, e.y - b.y))[0];
         if (target) {
           const angle = Math.atan2(b.vy, b.vx), desired = Math.atan2(target.y - b.y, target.x - b.x);
           const difference = Math.atan2(Math.sin(desired - angle), Math.cos(desired - angle));
-          const turn = clamp(difference, -dt * (2 + state.player.upgrades.homing + (state.player.evolutions.includes('frost') ? 2 : 0)), dt * (2 + state.player.upgrades.homing));
+          const maxTurn = dt * (2 + state.player.upgrades.homing + (state.player.evolutions.includes('frost') ? 2 : 0));
+          const turn = clamp(difference, -maxTurn, maxTurn);
           b.vx = Math.cos(angle + turn) * 950; b.vy = Math.sin(angle + turn) * 950;
         }
       }
       b.trail.push({ x: b.x, y: b.y }); if (b.trail.length > 4) b.trail.shift();
       b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
       if (b.life <= 0) { state.bullets.splice(i, 1); continue; }
-      const wall = b.x < 18 || b.x > W - 18 || b.y < 85 || b.y > H - 18;
-      const hit = coverHit(oldX, oldY, b.x, b.y, b.r);
-      if (wall || hit) {
-        if (b.bounces <= 0) { state.bullets.splice(i, 1); continue; }
-        b.bounces--;
-        if (hit) {
-          const rect = hit.rect;
-          if (oldX <= rect.x - b.r || oldX >= rect.x + rect.w + b.r) b.vx *= -1; else b.vy *= -1;
-          b.x = oldX; b.y = oldY;
-        } else {
-          if (b.x < 18 || b.x > W - 18) b.vx *= -1;
-          if (b.y < 85 || b.y > H - 18) b.vy *= -1;
-          b.x = clamp(b.x, 18, W - 18); b.y = clamp(b.y, 85, H - 18);
+      const dx = b.x - oldX, dy = b.y - oldY;
+      const cover = coverHit(oldX, oldY, b.x, b.y, b.r);
+      let stop = cover ? { t: cover.t, rect: cover.rect } : null;
+      for (const [origin, delta, min, max, axis] of [[oldX, dx, 18, W-18, 'x'], [oldY, dy, 85, H-18, 'y']]) {
+        const end = origin + delta;
+        if ((end < min || end > max) && Math.abs(delta) > .00001) {
+          const time = clamp(((end < min ? min : max) - origin) / delta, 0, 1);
+          if (!stop || time < stop.t) stop = { t: time, axis };
         }
       }
-      const hits = state.enemies.filter((e) => !b.hitEnemies.has(e) &&
-        segmentDistanceSquared(oldX, oldY, b.x, b.y, e.x, e.y) < (b.r + e.r) ** 2)
-        .sort((a, e) => ((a.x - oldX) * b.vx + (a.y - oldY) * b.vy) - ((e.x - oldX) * b.vx + (e.y - oldY) * b.vy));
-      for (const enemy of hits) {
+      const lengthSquared = dx * dx + dy * dy;
+      const hits = state.enemies.filter((e) => e.hp > 0 && !b.hitEnemies.has(e)).map((enemy) => {
+        const ex = oldX - enemy.x, ey = oldY - enemy.y, radius = b.r + enemy.r;
+        const c = ex*ex + ey*ey - radius*radius, dot = ex*dx + ey*dy;
+        const discriminant = dot*dot - lengthSquared*c;
+        const time = c <= 0 ? 0 : lengthSquared > 0 && discriminant >= 0 ? (-dot-Math.sqrt(discriminant))/lengthSquared : Infinity;
+        return { enemy, t: time };
+      }).filter((hit) => hit.t >= 0 && hit.t <= 1 && (!stop || hit.t < stop.t)).sort((a,b) => a.t-b.t);
+      let consumed = false;
+      for (const {enemy} of hits) {
         if (!state.enemies.includes(enemy)) continue;
         b.hitEnemies.add(enemy); bulletImpact(b, enemy);
-        if (b.piercesLeft <= 0) { state.bullets.splice(i, 1); break; }
+        if (b.piercesLeft <= 0) { state.bullets.splice(i, 1); consumed = true; break; }
         b.piercesLeft--;
       }
+      if (consumed || !stop) continue;
+      if (b.bounces <= 0) { state.bullets.splice(i, 1); continue; }
+      b.bounces--;
+      const impactX=oldX+dx*stop.t, impactY=oldY+dy*stop.t;
+      let axis=stop.axis;
+      if (stop.rect) {
+        const rect=stop.rect;
+        const xEdge=Math.min(Math.abs(impactX-rect.x+b.r),Math.abs(impactX-rect.x-rect.w-b.r));
+        const yEdge=Math.min(Math.abs(impactY-rect.y+b.r),Math.abs(impactY-rect.y-rect.h-b.r));
+        axis=xEdge<yEdge?'x':'y';
+      }
+      if (axis==='x') b.vx*=-1; else b.vy*=-1;
+      b.x=impactX-dx*.0001;b.y=impactY-dy*.0001;
     }
   }
 
@@ -1338,7 +1428,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
   }
 
   function drawPlayer(p, time) {
-    const blink = p.invulnerable > 0 && Math.floor(time * 17) % 2 === 0;
+    const blink = p.invulnerable > 0 && !reducedMotion?.matches && Math.floor(time * 17) % 2 === 0;
     drawUnitSprite('player', p.x, p.y, p.angle, 83, blink ? .7 : 1);
     if (p.reload > 0) {
       ctx.strokeStyle = '#a6ddff';
@@ -1643,7 +1733,7 @@ export function mountGame(canvas, { onState = () => {}, onEvent = () => {} } = {
     ctx.fillStyle='#33465d';ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.setTransform(dpr*drawScale,0,0,dpr*drawScale,dpr*drawOffsetX,dpr*drawOffsetY);
     ctx.save();
-    if (state.shake>0 && phase==='playing') ctx.translate(rand(-state.shake,state.shake),rand(-state.shake,state.shake));
+    if (state.shake>0 && phase==='playing' && !reducedMotion?.matches) ctx.translate(rand(-state.shake,state.shake),rand(-state.shake,state.shake));
     drawFloor(state.time);
     drawWorldFeatures();
     drawTelegraphs();
